@@ -155,7 +155,7 @@ namespace Patchwork
 				{
 					if (i*i + j*j <= m_radius*m_radius)
 					{
-						SDL_RenderDrawPoint(renderer, m_origin.x + i, m_origin.y + j);
+						SDL_RenderDrawPoint(renderer, (int)(m_origin.x + i), (int) (m_origin.y + j));
 					}
 				}
 			}
@@ -173,9 +173,9 @@ namespace Patchwork
 			serial = serial + " " + to_string(m_color.b);
 		}
 
-		BoundingBox& bounding_box()
+		BoundingBox bounding_box()
 		{
-			BoundingBox bb;
+			BoundingBox bb = {};
 			bb.x_min = (int)(m_origin.x - m_radius);
 			bb.x_max = (int)(m_origin.x + m_radius);
 			bb.y_min = (int)(m_origin.y - m_radius);
@@ -192,6 +192,7 @@ namespace Patchwork
 	};
 
 	bool operator==(const Circle& a, const Circle& b) { if (a.origin() == b.origin() && a.radius() == b.radius() && a.color() == b.color()) return true; return false; }
+	bool operator!=(const Circle& a, const Circle& b) { return !(a == b); }
 	std::ostream& operator<< (std::ostream &out, const Circle &Circle)
 	{
 		out << "Circle" << std::endl;
@@ -240,19 +241,19 @@ namespace Patchwork
 		void homothety(float ratio) 
 		{ /*compute bounding rectangle and move points by (rect_center - points)*ratio */ 
 			BoundingBox bb = bounding_box();
-			Vec2 center = Vec2(bb.x_max - ((bb.x_max - bb.x_min) / 2), bb.y_max - ((bb.y_max - bb.y_min) / 2));
-			for (auto point : m_points)
+			Vec2 center = Vec2(bb.x_max - ((bb.x_max - bb.x_min) / 2.f), bb.y_max - ((bb.y_max - bb.y_min) / 2.f));
+			for (std::vector<Vec2>::iterator it = m_points.begin(); it != m_points.end(); ++it)
 			{
-				Vec2 u = (center - point);
-				point = point + ratio*u;
+				Vec2 u = (center - (*it));			
+				(*it) = (*it) + ratio*u;
 			}
 		}
 		void homothety(const Vec2& s, float ratio) 
 		{  
-			for (auto point : m_points)
+			for (std::vector<Vec2>::iterator it = m_points.begin(); it != m_points.end(); ++it)
 			{
-				Vec2 u = (s - point);
-				point = point + ratio*u;
+				Vec2 u = (s - (*it));
+				(*it) = (*it) + ratio*u;
 			}
 		}
 		void rotate(const Vec2& p, double angle)
@@ -339,7 +340,7 @@ namespace Patchwork
 			serial = serial + " " + to_string(m_color.b);
 		}
 
-		BoundingBox& bounding_box()
+		BoundingBox bounding_box()
 		{
 			BoundingBox bb;
 			for (auto point : m_points)
@@ -384,9 +385,7 @@ namespace Patchwork
 
 	bool operator!=(const Polygon& a, const Polygon& b)
 	{
-		if (a.points() != b.points())
-			return true;
-		return false;
+		return !(a == b);
 	}
 
 	std::ostream& operator<< (std::ostream &out, const Polygon &Polygon)
@@ -418,15 +417,44 @@ namespace Patchwork
 		float perimeter() const { return(1.f); }
 		void homothety(float ratio) { /*NON SENSE*/ }
 		void homothety(const Vec2& s, float ratio) { /*NON SENSE*/ }
-		void rotate(float angle) {}
-		void rotate(const Vec2& c, double angle) { }
+		void rotate(float angle) 
+		{  
+			Vec2 p = m_point + m_direction;
+			p.x -= m_point.x;
+			p.y -= m_point.y;
+			float s = fast_sin(angle);
+			float c = fast_cos(angle);
+			float x = (p.x * c - p.y * s) + m_point.x;
+			float y = (p.x * s + p.y * c) + m_point.y;
+
+			m_direction = (Vec2(x, y) - m_point);
+		}
+		void rotate(const Vec2& p, double angle) 
+		{ 
+			Vec2 point = m_point + m_direction;
+			point.x -= p.x;
+			point.y -= p.y;
+			float s = fast_sin(angle);
+			float c = fast_cos(angle);
+			float x = (point.x * c - point.y * s) + p.x;
+			float y = (point.x * s + point.y * c) + p.y;
+
+			m_point.x -= p.x;
+			m_point.y -= p.y;
+			float c_x = (m_point.x * c - m_point.y * s) + p.x;
+			float c_y = (m_point.x * s + m_point.y * c) + p.y;
+			m_point.x = c_x;
+			m_point.y = c_y;
+			m_direction = (Vec2(x, y) - m_point);
+		}
+
 		void translate(const Vec2& t) { m_point = m_point + t; }
 		void centralSym(const Vec2& c) { Vec2 t = 2 * (c - m_point); translate(t); }
 		void axialSym(const Vec2& p, const Vec2& d){ /*NON SENSE*/ }
 		void display(SDL_Renderer* renderer)
 		{
 			SDL_SetRenderDrawColor(renderer, m_color.r, m_color.g, m_color.b, 0x00);
-			SDL_RenderDrawLine(renderer, m_point.x, m_point.y, m_point.x + m_direction.x, m_point.y + m_direction.y);
+			SDL_RenderDrawLine(renderer, (int)m_point.x, (int)m_point.y, (int)(m_point.x + m_direction.x), (int) (m_point.y + m_direction.y));
 		}
 
 		void serialize(std::string& serial)
@@ -441,7 +469,7 @@ namespace Patchwork
 			serial = serial + " " + to_string(m_color.b);
 		}
 
-		BoundingBox& bounding_box()
+		BoundingBox bounding_box()
 		{
 			//infinite so we put everything at 0
 			BoundingBox bb;
@@ -456,6 +484,18 @@ namespace Patchwork
 		Vec2 m_point;
 		Vec2 m_direction;
 	};
+
+	bool operator==(const Line& a, const Line& b)
+	{
+		if (a.point() == b.point() && a.direction() == b.direction())
+			return true;
+		return false;
+	}
+
+	bool operator!=(const Line& a, const Line& b)
+	{
+		return !(a == b);
+	}
 
 	std::ostream& operator<< (std::ostream &out, const Line &Line)
 	{
@@ -517,7 +557,7 @@ namespace Patchwork
 				{
 					if (j*j*m_radius.x*m_radius.x + i*i*m_radius.y*m_radius.y <= m_radius.x*m_radius.x*m_radius.y*m_radius.y)
 					{
-						SDL_RenderDrawPoint(renderer, m_origin.x + i, m_origin.y + j);
+						SDL_RenderDrawPoint(renderer, (int) (m_origin.x + i), (int) (m_origin.y + j));
 					}
 				}
 			}
@@ -535,7 +575,7 @@ namespace Patchwork
 			serial = serial + " " + to_string(m_color.b);
 		}
 
-		BoundingBox& bounding_box()
+		BoundingBox bounding_box()
 		{
 			BoundingBox bb;
 			bb.x_min = (int)(m_origin.x - m_radius.x);
@@ -552,6 +592,18 @@ namespace Patchwork
 		Vec2 m_origin;
 		Vec2 m_radius;
 	};
+
+	bool operator==(const Ellipse& a, const Ellipse& b)
+	{
+		if (a.origin() == b.origin() && a.radius() == b.radius())
+			return true;
+		return false;
+	}
+
+	bool operator!=(const Ellipse& a, const Ellipse& b)
+	{
+		return !(a == b);
+	}
 
 	std::ostream& operator<< (std::ostream &out, const Ellipse &Ellipse)
 	{
