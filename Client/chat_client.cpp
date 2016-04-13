@@ -63,7 +63,6 @@ private:
         {
           if (!ec)
           {
-			  std::cout << "Received server connection" << std::endl;
             do_read_header();
           }
         });
@@ -94,9 +93,9 @@ private:
         {
           if (!ec)
           {
-			  std::cout << "Received msg from serv" << std::endl;
 			  if (std::string(read_msg_.body()) == "TEST")
 			  {
+				  //Send image
 				  chat_message msg;
 				  std::string s;
 				  img.serialize(s);
@@ -107,7 +106,8 @@ private:
 			  }
 			  else
 			  {
-				  img = deserialize(std::string(read_msg_.body()));
+				  //Get image
+				  img.deserialize(std::string(read_msg_.body()));
 			  }
             do_read_header();
           }
@@ -148,209 +148,314 @@ private:
   Image& img;
 };
 
-int _tmain(int argc, _TCHAR* argv[])
+
+class Client
 {
-  try
-  {
-    if (argc != 3)
-    {
-      std::cerr << "Usage: chat_client <host> <port>\n";
-      //return 1;
-    }
+public :
+	const enum Commands { DISPLAY = 0, MAKE, TRANSFORM, PRINT, SEND, DELETE_, UNKNOWN };
+	static const std::vector<std::string> cmds;
 
-	std::vector<std::string> functions = { "rotate", "homothety", "translate", "axial_sym", "central_sym" };
-	std::vector<std::string> types = { "circle", "polygon", "line", "ellipse" };
+	Commands CmdStringToEnum(std::string s)
+	{
+		for (int i = 0; i < cmds.size(); ++i)
+		{
+			if (cmds.at(i) == s)
+			{
+				return static_cast<Commands>(i);
+			}
+		}
+		return Commands::UNKNOWN;
+	}	
 
-	Image image;
-	image.add_component(new Circle(Vec2(400, 300), 50, Color(255, 0, 0)));
-	image.add_component(new Patchwork::Polygon({ { 200, 200 }, { 300, 200 }, { 300, 400 }, { 200, 400 } }, Color(0, 255, 0)));
-	SDL_Init(SDL_INIT_VIDEO);
+	Client(std::string ip, std::string port, boost::asio::io_service& service) : io_service(service)
+	{
+		img = new Image();
+		resolver = new tcp::resolver(io_service);
+		auto endpoint_iterator = resolver->resolve({ "127.0.0.1", "8080" });
+		c = new chat_client(io_service, endpoint_iterator, *img);
+		std::thread* t = new std::thread([&](){ io_service.run(); });
+		start_polling();
+	};
+
+private:
+	void start_polling()
+	{
+		const unsigned int LINE_MAX_SIZE = 256;
+		// Start polling for commands
+		char line[LINE_MAX_SIZE];
+		std::string cmd;
+		//    While the users is entering commands we react to it
+		while (std::cin.getline(line, LINE_MAX_SIZE))
+		{
+			cmd = std::string(line);
+
+			switch (CmdStringToEnum(cmd))
+			{
+				case Commands::DISPLAY:
+				{
+					//Print annotation in console
+					std::cout << "Annotation : " << img->get_annotation() << std::endl;
+					//Create window and display image
+					SDL_CreateWindowAndRenderer(800, 600, 0, &window, &renderer);
+					while (1) {
+						SDL_PollEvent(&event);
+						if (event.type == SDL_QUIT) {
+							break;
+						}
+						SDL_SetRenderDrawColor(renderer, 255, 255, 255, 0x00);
+						SDL_RenderClear(renderer);
+						img->display(renderer);
+						SDL_RenderPresent(renderer);
+					}
+					SDL_DestroyWindow(window);
+				}break;
+
+				case Commands::MAKE:
+				{
+					std::cout << "Enter Shape Type : ";
+					std::cin >> cmd;
+					switch (Shape::ShapeStringToEnum(cmd))
+					{
+						case Shape::Derivedtype::CIRCLE:
+						{
+							try
+							{
+								float x, y, radius;
+								int r, g, b;
+								std::cout << "Origin x : ";
+								std::cin >> x;
+								std::cout << "Origin y : ";
+								std::cin >> y;
+								std::cout << "Radius : ";
+								std::cin >> radius;
+								std::cout << "Color R : ";
+								std::cin >> r;
+								std::cout << "Color G : ";
+								std::cin >> g;
+								std::cout << "Color B : ";
+								std::cin >> b;
+								img->add_component(new Circle(Vec2(x, y), radius, Color(r, g, b)));
+							}
+							catch (std::exception& e)
+							{
+								//Catch error of types when cin trying to convert to desired type
+								std::cout << " Problem : " << e.what() << std::endl;
+							}				
+						}break;
+
+						case Shape::Derivedtype::ELLIPSE:
+						{
+							try
+							{
+								float x , y , rad_x, rad_y;
+								int r, g, b;
+								std::cout << "Origin x : ";
+								std::cin >> x;
+								std::cout << "Origin y : ";
+								std::cin >> y;
+								std::cout << "Radius x : ";
+								std::cin >> rad_x;
+								std::cout << "Radius y : ";
+								std::cin >> rad_y;
+								std::cout << "Color R : ";
+								std::cin >> r;
+								std::cout << "Color G : ";
+								std::cin >> g;
+								std::cout << "Color B : ";
+								std::cin >> b;
+								img->add_component(new Patchwork::Ellipse(Vec2(x, y), Vec2(rad_x, rad_y), Color(r, g, b)));
+							}
+							catch (std::exception& e)
+							{
+								//Catch error of types when cin trying to convert to desired type
+								std::cout << " Problem : " << e.what() << std::endl;
+							}
+						}break;
+
+						case Shape::Derivedtype::LINE:
+						{
+							try
+							{
+								float x, y, dir_x, dir_y;
+								int r, g, b;
+								std::cout << "Origin x : ";
+								std::cin >> x;
+								std::cout << "Origin y : ";
+								std::cin >> y;
+								std::cout << "Vector x : ";
+								std::cin >> dir_x;
+								std::cout << "Vector y : ";
+								std::cin >> dir_y;
+								std::cout << "Color R : ";
+								std::cin >> r;
+								std::cout << "Color G : ";
+								std::cin >> g;
+								std::cout << "Color B : ";
+								std::cin >> b;
+								img->add_component(new Patchwork::Line(Vec2(x, y), Vec2(dir_x, dir_y), Color(r, g, b)));
+							}
+							catch (std::exception& e)
+							{
+								//Catch error of types when cin trying to convert to desired type
+								std::cout << " Problem : " << e.what() << std::endl;
+							}
+						}break;
+
+						case Shape::POLYGON:
+						{
+							try
+							{
+								int nb_pts, r, g, b;
+								std::vector<Vec2> points;
+								std::cout << "Vertex count : ";
+								std::cin >> nb_pts;
+
+								float x, y;
+								for (int i = 0; i < nb_pts; ++i)
+								{
+									std::cout << "Origin x : ";
+									std::cin >> x;
+									std::cout << "Origin y : ";
+									std::cin >> y;
+									points.push_back(Vec2(x, y));
+								}
+
+								std::cout << "Color R : ";
+								std::cin >> r;
+								std::cout << "Color G : ";
+								std::cin >> g;
+								std::cout << "Color B : ";
+								std::cin >> b;
+								img->add_component(new Patchwork::Polygon(points, Color(r, g, b)));
+							}
+							catch (std::exception& e)
+							{
+								//Catch error of types when cin trying to convert to desired type
+								std::cout << " Problem : " << e.what() << std::endl;
+							}
+						}break;
+
+						default:
+						{
+							std::cout << "Unknown command" << std::endl;
+						}break;
+					}
+				}break;
+
+				case Commands::SEND:
+				{
+					chat_message msg;
+					std::string serial;
+					img->serialize(serial);
+					msg.body_length(serial.size());
+					std::memcpy(msg.body(), serial.c_str(), msg.body_length());
+					msg.encode_header();
+					c->write(msg);
+				}break;
+
+				case Commands::TRANSFORM:
+				{
+					int id;
+					std::string buf;
+					std::cout << "ID ?" << std::endl;
+					std::cin >> id;
+					std::cout << "Which one ? " << std::endl;
+					std::cin >> buf;
+					if (buf == "homothety")
+					{
+						float ratio;
+						std::cout << "Ratio : " << std::endl;
+						std::cin >> ratio;
+						img->components().at(id)->homothety(ratio);
+					}
+					else if (buf == "rotate")
+					{
+						float angle;
+						std::cout << "Angle : " << std::endl;
+						std::cin >> angle;
+						img->components().at(id)->rotate(angle);
+					}
+					else if (buf == "translate")
+					{
+						float x, y;
+						std::cout << "Translation X : " << std::endl;
+						std::cin >> x;
+						std::cout << "Translation Y : " << std::endl;
+						std::cin >> y;
+						img->components().at(id)->translate(Vec2(x, y));
+					}
+					else if (buf == "centralSym")
+					{
+						float x, y;
+						std::cout << "Center X : " << std::endl;
+						std::cin >> x;
+						std::cout << "Center Y : " << std::endl;
+						std::cin >> y;
+						img->components().at(id)->centralSym(Vec2(x, y));
+					}
+					else if (buf == "axialSym")
+					{
+						float x, y, dir_x, dir_y;
+						std::cout << "Axe point X : " << std::endl;
+						std::cin >> x;
+						std::cout << "Axe point Y : " << std::endl;
+						std::cin >> y;
+						std::cout << "Axe direction X : " << std::endl;
+						std::cin >> dir_x;
+						std::cout << "Axe direction Y : " << std::endl;
+						std::cin >> dir_y;
+						img->components().at(id)->axialSym(Vec2(x, y), Vec2(dir_x, dir_y));
+					}
+				}break;
+
+				case Commands::PRINT:
+				{
+					print_components();
+				}break;
+
+				case Commands::DELETE_:
+				{
+					try
+					{
+						int id;
+						print_components();
+						std::cout << "Enter ID : " << std::endl;
+						std::cin >> id;
+						img->components().erase(img->components().begin() + id);
+					}
+					catch (std::exception& e)
+					{
+						std::cout << "Unknown ID" << std::endl;
+					}
+				}break;
+			}
+		}
+		c->close();
+		t->join();
+	}
+
+	void print_components()
+	{
+		for (int i = 0; i < img->components().size(); i++)
+		{
+			std::cout << i << " " << *img->components().at(i);
+		}
+	}
+
+	chat_client* c;
 	SDL_Event event;
 	SDL_Window *window;
 	SDL_Renderer *renderer;
-	
-    boost::asio::io_service io_service;
+	boost::asio::io_service& io_service;
+	tcp::resolver* resolver;
+	std::thread* t;
+	Image* img;
+};
+const std::vector<std::string> Client::cmds = { "display", "make", "transform", "print", "send", "delete" };
 
-    tcp::resolver resolver(io_service);
-    //auto endpoint_iterator = resolver.resolve({ (char*)argv[1], (char*)argv[2] });
-	auto endpoint_iterator = resolver.resolve({ "127.0.0.1", "8080" });
-    chat_client c(io_service, endpoint_iterator, image);
-
-    std::thread t([&io_service](){ io_service.run(); });
-
-    char line[chat_message::max_body_length + 1];
-	std::string line_str;
-    while (std::cin.getline(line, chat_message::max_body_length + 1))
-    {
-		line_str = std::string(line);
-		if (line_str == "display")
-		{
-			std::cout << "Annotation : " << image.get_annotation() << std::endl;
-			SDL_CreateWindowAndRenderer(800, 600, 0, &window, &renderer);
-			while (1) {
-				SDL_PollEvent(&event);
-				if (event.type == SDL_QUIT) {
-					break;
-				}
-				SDL_SetRenderDrawColor(renderer, 255, 255, 255, 0x00);
-				SDL_RenderClear(renderer);
-				image.display(renderer);
-				SDL_RenderPresent(renderer);
-			}
-			SDL_DestroyWindow(window);
-		}
-
-		if (line_str == "annotation")
-		{
-			image.get_annotation();
-		}
-
-		if (line_str == "make")
-		{
-			std::cout << "Type ? " << std::endl;
-			std::string buf;
-			std::cin >> buf;
-			if (buf == "circle")
-			{
-				float x;
-				std::cout << "Origin x : ";
-				std::cin >> x;
-				float y;
-				std::cout << "Origin y : ";
-				std::cin >> y;
-				float radius;
-				std::cout << "Radius : ";
-				std::cin >> radius;
-				int r, g, b;
-				std::cout << "Color R : ";
-				std::cin >> r;
-				std::cout << "Color G : ";
-				std::cin >> g;
-				std::cout << "Color B : ";
-				std::cin >> b;
-				image.add_component(new Circle(Vec2(x, y), radius, Color(r, g, b)));
-			}
-			else if (buf == "polygon")
-			{
-				int nb_pts;
-				std::vector<Vec2> points;
-				std::cout << "Nombre de sommets : ";
-				std::cin >> nb_pts;
-
-				for (int i = 0; i < nb_pts; ++i)
-				{
-					float x;
-					std::cout << "Origin x : ";
-					std::cin >> x;
-					float y;
-					std::cout << "Origin y : ";
-					std::cin >> y;
-					points.push_back(Vec2(x, y));
-				}
-				int r, g, b;
-				std::cout << "Color R : ";
-				std::cin >> r;
-				std::cout << "Color G : ";
-				std::cin >> g;
-				std::cout << "Color B : ";
-				std::cin >> b;
-				image.add_component(new Patchwork::Polygon(points, Color(r,g,b)));
-			}
-			else if (buf == "ellipse")
-			{
-				float x;
-				std::cout << "Origin x : ";
-				std::cin >> x;
-				float y;
-				std::cout << "Origin y : ";
-				std::cin >> y;
-				float rad_x;
-				std::cout << "Radius x : ";
-				std::cin >> rad_x;
-				float rad_y;
-				std::cout << "Radius y : ";
-				std::cin >> rad_y;
-				int r, g, b;
-				std::cout << "Color R : ";
-				std::cin >> r;
-				std::cout << "Color G : ";
-				std::cin >> g;
-				std::cout << "Color B : ";
-				std::cin >> b;
-				image.add_component(new Patchwork::Ellipse(Vec2(x,y), Vec2(rad_x, rad_y), Color(r, g, b)));
-			}
-			else if (buf == "line")
-			{
-				float x;
-				std::cout << "Origin x : ";
-				std::cin >> x;
-				float y;
-				std::cout << "Origin y : ";
-				std::cin >> y;
-				float rad_x;
-				std::cout << "Vector x : ";
-				std::cin >> rad_x;
-				float rad_y;
-				std::cout << "Vector y : ";
-				std::cin >> rad_y;
-				int r, g, b;
-				std::cout << "Color R : ";
-				std::cin >> r;
-				std::cout << "Color G : ";
-				std::cin >> g;
-				std::cout << "Color B : ";
-				std::cin >> b;
-				image.add_component(new Patchwork::Line(Vec2(x, y), Vec2(rad_x, rad_y), Color(r, g, b)));
-			}
-			else
-			{
-				std::cout << "Type unknown" << std::endl;
-			}			
-		}
-
-		if (line_str == "send")
-		{
-			chat_message msg;
-			std::string serial;
-			image.serialize(serial);
-			msg.body_length(serial.size());
-			std::memcpy(msg.body(), serial.c_str(), msg.body_length());
-			msg.encode_header();
-			c.write(msg);
-		}
-
-		if (line_str == "transform")
-		{
-			int id;
-			std::cout << "ID ?" << std::endl;
-			std::cin >> id;
-
-			
-		}
-
-		if (line_str == "print")
-		{
-			for (int i = 0; i < image.components().size(); i++)
-			{
-				std::cout << i << " " << *image.components().at(i);
-			}
-		}
-
-		if (line_str == "delete")
-		{
-			int id;
-			std::cout << "ID ?" << std::endl;
-			std::cin >> id;
-		}
-    }
-
-    c.close();
-    t.join();
-  }
-  catch (std::exception& e)
-  {
-    std::cerr << "Exception: " << e.what() << "\n";
-  }
-
+int _tmain(int argc, _TCHAR* argv[])
+{
+  boost::asio::io_service io_service;
+  Client c("127.0.0.1", "8080", io_service);
   return 0;
 }

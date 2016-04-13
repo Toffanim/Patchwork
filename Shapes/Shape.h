@@ -4,6 +4,7 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <mutex>
 #include "Maths.h"
 #include "SDL2\SDL.h"
 
@@ -66,6 +67,9 @@ namespace Patchwork
 	{
 	public:
 		enum Derivedtype { CIRCLE=0, POLYGON, LINE, ELLIPSE, END_ENUM };
+		enum Functions { ROTATION = 0, HOMOTHETY, TRANSLATE, AXIAL_SYMETRY, CENTRAL_SYMETRY, UNKNOWN };
+		static const std::vector<std::string> transforms;
+		static const std::vector<std::string> shapes;
 
 		Shape(Derivedtype type, Color color) : m_type(type), m_color(color){};
 		~Shape(){};
@@ -73,6 +77,29 @@ namespace Patchwork
 		Derivedtype type() const { return(m_type); }
 		const Color color() const { return(m_color); }
 
+		static Derivedtype ShapeStringToEnum(std::string s)
+		{
+			for (int i = 0; i < shapes.size(); ++i)
+			{
+				if (shapes.at(i) == s)
+				{
+					return static_cast<Derivedtype>(i);
+				}
+			}
+			return Derivedtype::END_ENUM;
+		}
+
+		static Functions FuncStringToEnum(std::string s)
+		{
+			for (int i = 0; i < transforms.size(); ++i)
+			{
+				if (transforms.at(i) == s)
+				{
+					return static_cast<Functions>(i);
+				}
+			}
+			return Functions::UNKNOWN;
+		}
 
 		virtual float area() const = 0;
 		virtual float perimeter() const = 0;
@@ -91,6 +118,8 @@ namespace Patchwork
 		Derivedtype m_type;
 		Color m_color;
 	};
+	const std::vector<std::string> Shape::transforms = { "rotate", "homothety", "translate", "axial_sym", "central_sym" };
+	const std::vector<std::string> Shape::shapes = { "circle", "polygon", "line", "ellipse" };
 
 	///////////////////////////////////////////////////////////////////////////////////////////////////////////
 	class Circle : public Shape
@@ -617,9 +646,17 @@ namespace Patchwork
 	class Image
 	{
 	public:
-		void add_component(Shape* s) { components_.push_back(s); }
+		Image() : annotation(std::string()), components_(std::vector<Shape *>()){}
+		Image(const Image&) = delete;
+		Image& operator=(Image const&) = delete;
+		void add_component(Shape* s) 
+		{ 
+			//std::lock_guard<std::mutex> guard(mutex);
+			components_.push_back(s); 
+		}
 		void display(SDL_Renderer* renderer)
 		{
+			//std::lock_guard<std::mutex> guard(mutex);
 			for (auto component : components_)
 			{
 				component->display(renderer);
@@ -627,16 +664,19 @@ namespace Patchwork
 		}
 		std::string get_annotation()
 		{
+			//std::lock_guard<std::mutex> guard(mutex);
 			return annotation;
 		}
 
 		void annotate(std::string msg)
 		{
+			//std::lock_guard<std::mutex> guard(mutex);
 			annotation = msg;
 		}
 
 		void serialize(std::string& serial)
 		{
+			//std::lock_guard<std::mutex> guard(mutex);
 			int max_x = 0, max_y = 0;
 			for (auto component : components_)
 			{
@@ -645,114 +685,115 @@ namespace Patchwork
 			serial = serial + " annotation " + to_string((int)annotation.size()) + " " + annotation;
 		}
 
+		void deserialize(std::string s)
+		{
+			components_.clear();
+			std::istringstream buf(s);
+			for (std::string word; buf >> word;)
+			{
+				if (word == "circle")
+				{
+					buf >> word;
+					float x = std::stof(word);
+					buf >> word;
+					float y = std::stof(word);
+					buf >> word;
+					float rad = std::stof(word);
+					buf >> word;
+					int r = std::stoi(word);
+					buf >> word;
+					int g = std::stoi(word);
+					buf >> word;
+					int b = std::stoi(word);
+					add_component(new Circle(Vec2(x, y), rad, Color(r, g, b)));
+				}
+
+				else if (word == "polygon")
+				{
+					std::vector<Vec2> points;
+					buf >> word;
+					int nb_pts = std::stoi(word);
+					for (int i = 0; i < nb_pts; i++)
+					{
+						buf >> word;
+						float x = std::stof(word);
+						buf >> word;
+						float y = std::stof(word);
+						points.push_back(Vec2(x, y));
+					}
+					buf >> word;
+					int r = std::stoi(word);
+					buf >> word;
+					int g = std::stoi(word);
+					buf >> word;
+					int b = std::stoi(word);
+					add_component(new Polygon(points, Color(r, g, b)));
+				}
+
+				else if (word == "line")
+				{
+					buf >> word;
+					float x = std::stof(word);
+					buf >> word;
+					float y = std::stof(word);
+					buf >> word;
+					float dir_x = std::stof(word);
+					buf >> word;
+					float dir_y = std::stof(word);
+					buf >> word;
+					int r = std::stoi(word);
+					buf >> word;
+					int g = std::stoi(word);
+					buf >> word;
+					int b = std::stoi(word);
+					add_component(new Line(Vec2(x, y), Vec2(dir_x, dir_y), Color(r, g, b)));
+				}
+
+				else if (word == "ellipse")
+				{
+					buf >> word;
+					float x = std::stof(word);
+					buf >> word;
+					float y = std::stof(word);
+					buf >> word;
+					float rad_x = std::stof(word);
+					buf >> word;
+					float rad_y = std::stof(word);
+					buf >> word;
+					int r = std::stoi(word);
+					buf >> word;
+					int g = std::stoi(word);
+					buf >> word;
+					int b = std::stoi(word);
+					add_component(new Ellipse(Vec2(x, y), Vec2(rad_x, rad_y), Color(r, g, b)));
+				}
+
+				else if (word == "annotation")
+				{
+					buf >> word;
+					int string_size = std::stoi(word);
+					char buffer[1024];
+					buf.getline(buffer, string_size + 2);
+					std::string annotation = std::string(buffer);
+					annotate(annotation);
+				}
+			}
+		}
+
 		std::vector< Shape* > components()
 		{
+			//std::lock_guard<std::mutex> guard(mutex);
 			return components_;
 		}
 
 	private:
 		std::vector< Shape* > components_;
 		std::string annotation;
+		std::mutex mutex;
 	};
 
 
 	///////////////////////////////////////////////////////////////////////////////
-
-	Image& deserialize(std::string s)
-	{
-		Image* im = new Image();
-		std::istringstream buf(s);
-		for (std::string word; buf >> word;)
-		{
-			if (word == "circle")
-			{
-				buf >> word;
-				float x = std::stof(word);
-				buf >> word;
-				float y = std::stof(word);
-				buf >> word;
-				float rad = std::stof(word);
-				buf >> word;
-				int r = std::stoi(word);
-				buf >> word;
-				int g = std::stoi(word);
-				buf >> word;
-				int b = std::stoi(word);
-				im->add_component( new Circle(Vec2(x, y), rad, Color(r, g, b)));
-			}
-
-			else if (word == "polygon")
-			{
-				std::vector<Vec2> points;
-				buf >> word;
-				int nb_pts = std::stoi(word);
-				for (int i = 0; i < nb_pts; i++)
-				{
-					buf >> word;
-					float x = std::stof(word);
-					buf >> word;
-					float y = std::stof(word);
-					points.push_back(Vec2(x, y));
-				}
-				buf >> word;
-				int r = std::stoi(word);
-				buf >> word;
-				int g = std::stoi(word);
-				buf >> word;
-				int b = std::stoi(word);
-				im->add_component(new Polygon(points, Color(r, g, b)));
-			}
-
-			else if (word == "line")
-			{
-				buf >> word;
-				float x = std::stof(word);
-				buf >> word;
-				float y = std::stof(word);
-				buf >> word;
-				float dir_x = std::stof(word);
-				buf >> word;
-				float dir_y = std::stof(word);
-				buf >> word;
-				int r = std::stoi(word);
-				buf >> word;
-				int g = std::stoi(word);
-				buf >> word;
-				int b = std::stoi(word);
-				im->add_component(new Line(Vec2(x, y), Vec2(dir_x, dir_y), Color(r, g, b)));
-			}
-
-			else if (word == "ellipse")
-			{	
-				buf >> word;
-				float x = std::stof(word);
-				buf >> word;
-				float y = std::stof(word);
-				buf >> word;
-				float rad_x = std::stof(word);
-				buf >> word;
-				float rad_y = std::stof(word);
-				buf >> word;
-				int r = std::stoi(word);
-				buf >> word;
-				int g = std::stoi(word);
-				buf >> word;
-				int b = std::stoi(word);
-				im->add_component(new Ellipse(Vec2(x, y), Vec2(rad_x, rad_y), Color(r, g, b)));
-			}
-
-			else if (word == "annotation")
-			{
-				buf >> word;
-				int string_size = std::stoi(word);
-				char buffer[1024];
-				buf.getline(buffer, string_size+2);
-				std::string annotation = std::string(buffer);
-				im->annotate(annotation);
-			}
-		}
-		return *im;
-	}
 
 	std::ostream& operator<< (std::ostream &out, Shape &Shape)
 	{

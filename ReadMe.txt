@@ -8,17 +8,19 @@ Pouvoir ordonner les formes (whatever the fuck that means, si c'est juste compar
 Aucun doublon de forme géométrique ne peut exister (Ne peut pas y a voir plus d'un type de primitive ou alors clone = delete ?) TODO
 Stats de la fresque OK
 
+Resize les images pour affichage TODO
+
 
 Server
 
-Concurrence TODO
+Concurrence OK
 Faire le patchowork (mettre les dessins bout à bout ça me parais suffisant) TODO
 
 
 Client
 
-Pouvoir faire les transformations en commandes TODO
-( Concurrence ? TODO )
+Pouvoir faire les transformations en commandes ALMOST DONE
+( Concurrence ? OK )
 
 Test suit
 
