@@ -176,7 +176,7 @@ private:
           {
 			std::cout << "Received msg : body read" << read_msg_.body() << std::endl;
 			std::string s = std::string(read_msg_.body());
-			img = deserialize(s);
+			img.deserialize(s);
             do_read_header();
           }
           else
