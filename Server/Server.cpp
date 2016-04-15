@@ -21,109 +21,85 @@
 #include <tchar.h>
 #endif
 #include <boost/asio.hpp>
-#include "chat_message.hpp"
+#include "Message.hpp"
 #include "Shape.h"
 
 using boost::asio::ip::tcp;
 using namespace Patchwork;
 
+/*! \file Server.cpp
+\brief File containing the server part of the application
+
+*/
+
 //----------------------------------------------------------------------
 
-typedef std::deque<chat_message> chat_message_queue;
+typedef std::deque<Message> Message_queue;
 
 //----------------------------------------------------------------------
-
+/*!
+Abstract class for handling Client.
+A client has an image and a unique ID associated to it.
+*/
 class ClientConnection
 {
 public:
 	virtual ~ClientConnection() {}
-  virtual void deliver(const chat_message& msg) = 0;
-  Image* img;
-  int ID;
+  virtual void deliver(const Message& msg) = 0;
+  Image* img; /*!< The image linked to the client */
+  int ID; /*!< unique ID identifying the client */
 };
 
 typedef std::shared_ptr<ClientConnection> ClientConnection_ptr;
 
 //----------------------------------------------------------------------
 
+/*!
+The room is responsible for maintening an updated list of client and 
+*/
 class Room
 {
 public:
-	void join(ClientConnection_ptr participant)
+	/*!
+	Add participant to the room
+	*/
+   void join(ClientConnection_ptr participant)
   {
     participants_.insert(participant);
   }
-
+   /*!
+   Delete participant from the room
+   */
 	void leave(ClientConnection_ptr participant)
   {
     participants_.erase(participant);
   }
-
-  void deliver(const chat_message& msg)
-  {
-    for (auto participant: participants_)
-      participant->deliver(msg);
-  }
-
-  void send_back_images()
-  {
-	  for (auto participant : participants_)
-	  {
-		  //get this participant image to string then send it
-		  chat_message msg;
-		  std::string s;
-		  participant->img->serialize(s);
-		  msg.body_length(s.length());
-		  std::memcpy(msg.body(), s.c_str(), msg.body_length());
-		  msg.encode_header();
-		  participant->deliver(  msg );
-	  }
-  }
-
-  void print_list()
-  {
-	  if (participants_.size())
-	  {
-		  for (auto participant : participants_)
-		  {
-			  std::cout << participant->ID << std::endl;
-		  }
-	  }
-	  else
-	  {
-		  std::cout << "There are no clients connected to the server" << std::endl;
-	  }
-  }
-
-  void annotate(int ID, std::string msg)
-  {
-	  for (auto participant : participants_)
-	  {
-		  if (participant->ID == ID)
-		  {
-			  participant->img->annotate(msg);
-		  }
-	  }
-  }
-
+	/*!
+	Getter of participant list of the room
+	*/
   std::set<ClientConnection_ptr> participants()
   {
 	  return participants_;
   }
 
 private:
-	std::set<ClientConnection_ptr> participants_;
-  enum { max_recent_msgs = 100 };
-  chat_message_queue recent_msgs_;
+	std::set<ClientConnection_ptr> participants_;  /*!< List of participants */
 };
 
 //----------------------------------------------------------------------
 
+
+/*!
+The Client class handle the client, joining the room and being the one doing asynchronous operations.
+*/
 class Client
   : public ClientConnection,
     public std::enable_shared_from_this<Client>
 {
 public:
+	/*!
+	Create a client with an associated socket, room, image and ID
+	*/
   Client(tcp::socket socket, Room& room, int ID)
     : socket_(std::move(socket)),
       room_(room)
@@ -131,14 +107,18 @@ public:
 	  this->ID = ID;
 	  img = new Image();
   }
-
+  /*!
+  Join the room and try to read from the socket
+  */
   void start()
   {
     room_.join(shared_from_this());
     do_read_header();
   }
-
-  void deliver(const chat_message& msg)
+  /*!
+  Write messages
+  */
+  void deliver(const Message& msg)
   {
     bool write_in_progress = !write_msgs_.empty();
     write_msgs_.push_back(msg);
@@ -149,11 +129,14 @@ public:
   }
 
 private:
+	/*!
+	Read from the socket into a buffer and analyze our message header, then ask to read the message's body
+	*/
   void do_read_header()
   {
     auto self(shared_from_this());
     boost::asio::async_read(socket_,
-        boost::asio::buffer(read_msg_.data(), chat_message::header_length),
+        boost::asio::buffer(read_msg_.data(), Message::header_length),
         [this, self](boost::system::error_code ec, std::size_t /*length*/)
         {
           if (!ec && read_msg_.decode_header())
@@ -166,7 +149,10 @@ private:
           }
         });
   }
-
+  /*!
+  Read from the socket into a buffer and analyze our message body, then start again to read from the socket is some reads are needed to be done (due to asynchronous design)
+  If it has something to read, it's an image so it deserialize it
+  */
   void do_read_body()
   {
     auto self(shared_from_this());
@@ -186,7 +172,9 @@ private:
           }
         });
   }
-
+  /*!
+  Write to the socket, then ask to write again if some writes are needed to be done (due to asychronous design)
+  */
   void do_write()
   {
     auto self(shared_from_this());
@@ -210,14 +198,17 @@ private:
         });
   }
 
-  tcp::socket socket_;
-  Room& room_;
-  chat_message read_msg_;
-  chat_message_queue write_msgs_;
+  tcp::socket socket_; /*!< boost:asio TCP socket */
+  Room& room_; /*!< The room in which the client is connected */
+  Message read_msg_; /*!< The message being read */
+  Message_queue write_msgs_; /*!< A list of message de send (due to asynchronous design) */
 };
 
 //----------------------------------------------------------------------
 
+/*!
+Class that handle the input and output of the server (basically reading and writing to the socket)
+*/
 class ServerIO
 {
 public:
@@ -228,37 +219,98 @@ public:
   {
     do_accept();
   }
-
-  void do_send()
+  /*!
+  Create a "GET" message and send it to all the client connected to the room
+  */
+  bool do_send()
   {
-	  chat_message msg;
-	  msg.body_length(std::strlen("GET"));
-	  std::memcpy(msg.body(), "GET", msg.body_length());
-	  msg.encode_header();
-	  room_.deliver( msg );
+	  if (room_.participants().size())
+	  {
+		  Message msg;
+		  msg.body_length(std::strlen("GET"));
+		  std::memcpy(msg.body(), "GET", msg.body_length());
+		  msg.encode_header();
+		  for (auto participant : room_.participants())
+			  participant->deliver(msg);
+		  return true;
+	  }
+	  else
+	  {
+		  std::cout << "There are no clients connected to the server" << std::endl;
+		  return false;
+	  }
   }
-
-  void do_send_back()
+  /*!
+  Send back all the drawings to all the client connected to the room
+  */
+  bool do_send_back()
   {
-	  room_.send_back_images();
+	  if (room_.participants().size())
+	  {
+		  for (auto participant : room_.participants())
+		  {
+			  //get this participant image to string then send it
+			  Message msg;
+			  std::string s;
+			  participant->img->serialize(s);
+			  msg.body_length(s.length());
+			  std::memcpy(msg.body(), s.c_str(), msg.body_length());
+			  msg.encode_header();
+			  participant->deliver(msg);
+		  }
+		  return true;
+	  }
+	  else
+	  {
+		  std::cout << "There are no clients connected to the server" << std::endl;
+		  return false;
+	  }
   }
-
-  void do_print()
+  /*!
+  Print all the client connected to the room
+  */
+  bool do_print()
   {
-	  room_.print_list();
+	  if (room_.participants().size())
+	  {
+		  std::cout << "Client ID : " << std::endl;
+		  for (auto participant : room_.participants())
+		  {
+			   std::cout << participant->ID << std::endl;
+		  }
+		  return true;
+	  }
+	  else
+	  {
+		  std::cout << "There are no clients connected to the server" << std::endl;
+		  return false;
+	  }
   }
-
+  /*!
+  Give the image associated the the Client ID the annotation contained in msg
+  */
   void do_annotation(int ID, std::string msg)
   {
-	  room_.annotate(ID, msg);
+	  for (auto participant : room_.participants())
+	  {
+		  if (participant->ID == ID)
+		  {
+			  participant->img->annotate(msg);
+		  }
+	  }
   }
-
+  /*!
+  Getter for the room
+  */
   Room& room()
   {
 	  return room_;
   }
 
 private:
+	/*!
+	Accept all incoming connection, recursively (due to asynchronous design)
+	*/
   void do_accept()
   {
     acceptor_.async_accept(socket_,
@@ -275,26 +327,34 @@ private:
         });
   }
 
-  tcp::acceptor acceptor_;
-  tcp::socket socket_;
-  Room room_;
-  int ID;
+  tcp::acceptor acceptor_; /*!< boost::asio acceptor (the core object of a server) that can accept connections */
+  tcp::socket socket_; /*!< boost::asio TCP Socket */
+  Room room_; /*!< A room allocated to the server */
+  int ID; /*!< An ID which will be incremented at each connections */
 };
 
 //----------------------------------------------------------------------
 
+/*!
+Class that handle the Server's input commands, basically polling commands from the console and reacting to it
+*/
 class Server
 {
 public:
-	enum Commands { DISPLAY = 0, SEND, GET, PRINT, ANNOTATE, STATS, PATCHWORK, UNKNOWN };
-	static const std::vector<std::string> cmds;
-
+	enum Commands { DISPLAY = 0, SEND, GET, PRINT, ANNOTATE, STATS, PATCHWORK, HELP, UNKNOWN }; /*!< Enums of available commands */
+	static const std::vector<std::string> cmds; /*!< A static container of strings defining the command string assiciaited to its Commands enum value  */
+	/*!
+	Static function to print available commands keywords
+	*/
 	static void print_commands()
 	{
 		for (auto cmd : cmds)
 			std::cout << " " << cmd;
 	}
-
+	/*!
+	Function to convert a string into a Command enum.
+	Return UNKNOWN if not in the container.
+	*/
 	Commands CmdStringToEnum(std::string s)
 	{
 		for (int i = 0; i < cmds.size(); ++i)
@@ -306,9 +366,13 @@ public:
 		}
 		return Commands::UNKNOWN;
 	}
-
+	/*!
+	Class that creates the Server and poll user input to execute commands
+	\param service boost::asio io_service
+	*/
 	Server(boost::asio::io_service& service) : io_service(service)
 	{
+		//Init socket
 		tcp::endpoint endpoint(tcp::v4(), 8080);
 		s = new ServerIO(io_service, std::move(endpoint));
 		std::thread* t = new std::thread([&](){ io_service.run(); });
@@ -317,6 +381,9 @@ public:
 	};
 
 private:
+	/*!
+	Function thats polls user inputs and call the associated functions
+	*/
 	void start_polling()
 	{
 		const unsigned int LINE_MAX_SIZE = 256;
@@ -324,6 +391,9 @@ private:
 		char line[LINE_MAX_SIZE];
 		std::string cmd;
 		//    While the users is entering commands we react to it
+		std::cout << "Available commands : ";
+		print_commands();
+		std::cout << std::endl << "Command : ";
 		while (std::cin.getline(line, LINE_MAX_SIZE))
 		{
 			cmd = std::string(line);
@@ -332,47 +402,63 @@ private:
 			{
 				case Commands::DISPLAY:
 				{
-					//TODO : make the user chose the image he wants to see
 					int ID;
 					std::string annotation;
-					s->do_print();
-					std::cout << "Choose an ID from the list :";
-					std::cin >> ID;
-					bool found_ID = false;
-					for (auto participant : s->room().participants())
+					if (s->do_print())
 					{
-						if (participant->ID == ID)
+						std::cout << "Choose an ID from the list :";
+						try
 						{
-							SDL_CreateWindowAndRenderer(800, 600, 0, &window, &renderer);
-							while (1) {
-								SDL_PollEvent(&event);
-								if (event.type == SDL_QUIT) {
-									break;
-								}
-								SDL_SetRenderDrawColor(renderer, 255, 255, 255, 0x00);
-								SDL_RenderClear(renderer);
-								participant->img->display(renderer);
-								SDL_RenderPresent(renderer);
+							std::cin >> ID;
+							if (std::cin.fail())
+							{
+								std::cin.clear();
+								throw std::domain_error("Bad input");
 							}
-							SDL_DestroyWindow(window);
-							found_ID = true;
+						}
+						catch (std::exception& e)
+						{
+							std::cout << std::endl << "Problem : " << e.what() << std::endl;
 							break;
 						}
-					}
-					if (!found_ID)
-					{
-						std::cout << "ID : " << ID << " not found" << std::endl;
+						bool found_ID = false;
+						for (auto participant : s->room().participants())
+						{
+							if (participant->ID == ID)
+							{
+								SDL_CreateWindowAndRenderer(800, 600, 0, &window, &renderer);
+								while (1) {
+									SDL_PollEvent(&event);
+									if (event.type == SDL_QUIT) {
+										break;
+									}
+									SDL_SetRenderDrawColor(renderer, 255, 255, 255, 0x00);
+									SDL_RenderClear(renderer);
+									participant->img->display(renderer);
+									SDL_RenderPresent(renderer);
+								}
+								SDL_DestroyWindow(window);
+								found_ID = true;
+								break;
+							}
+						}
+						if (!found_ID)
+						{
+							std::cout << "ID : " << ID << " not found" << std::endl;
+						}
 					}
 				}break;
 
 				case Commands::SEND:
 				{
-					s->do_send_back();
+					if ( s->do_send_back())
+					    std::cout << "Images sent" << std::endl;
 				}break;
 
 				case Commands::GET:
 				{
-					s->do_send();
+					if ( s->do_send() ) 
+					    std::cout << "Get images on progress | use \"print\" to check when it is done" << std::endl;
 				}break;
 
 				case Commands::PATCHWORK:
@@ -421,26 +507,42 @@ private:
 				{
 					//Make the user chose the image he wants to annotate
 					// and then another cin to get the annotation
-					s->do_print();
-					int ID;
-					std::string annotation;
-					std::cout << "Choose an ID from the list :";
-					std::cin >> ID;
-					bool found_ID = false;
-					for (auto participant : s->room().participants())
+					if (s->do_print())
 					{
-						if (participant->ID == ID)
+						int ID;
+						std::string annotation;
+						std::cout << "Choose an ID from the list :";
+						try
 						{
-							std::cout << "Enter your annotation :";
-							std::getline(std::cin, annotation);
-							std::getline(std::cin, annotation);
-							s->do_annotation(ID, annotation);
-							found_ID = true;
+							std::cin >> ID;
+							if (std::cin.fail())
+							{
+								std::cin.clear();
+								throw std::domain_error("Bad input");
+							}
 						}
-					}
-					if (!found_ID)
-					{
-						std::cout << "ID : " << ID << " not found" << std::endl;
+						catch (std::exception& e)
+						{
+							std::cout << std::endl << "Problem : " << e.what() << std::endl;
+							break;
+						}
+						bool found_ID = false;
+						for (auto participant : s->room().participants())
+						{
+							if (participant->ID == ID)
+							{
+								std::cout << "Enter your annotation :";
+								std::getline(std::cin, annotation);
+								std::getline(std::cin, annotation);
+								s->do_annotation(ID, annotation);
+								found_ID = true;
+								break;
+							}
+						}
+						if (!found_ID)
+						{
+							std::cout << "ID : " << ID << " not found" << std::endl;
+						}
 					}
 				}break;
 
@@ -502,25 +604,33 @@ private:
 					s->do_print();
 				}break;
 
+				case Commands::HELP:
+				{
+					print_commands();
+					std::cout << std::endl;
+				}break;
+
 				default:
 				{
 					std::cout << "Unknow command" << std::endl;
 				}
 			}
+			std::cin.clear();
+			std::cin.ignore(100000, '\n');
+			std::cout << std::endl << "Command : ";
 		}
 		t->join();
 	}
 
-	ServerIO* s;
-	SDL_Event event;
-	SDL_Window *window;
-	SDL_Renderer *renderer;
-	boost::asio::io_service& io_service;
-	tcp::resolver* resolver;
-	std::thread* t;
-	std::vector<Image*> images;
+	ServerIO* s; /*!< A list of message de send (due to asynchronous design) */
+	SDL_Event event; /*!< SDL Event so we can know when to close the window */
+	SDL_Window *window; /*!< SDL window to display to */
+	SDL_Renderer *renderer; /*!< SDL renderer to draw components to */
+	boost::asio::io_service& io_service;  /*!< boost::asio io_service */
+	tcp::resolver* resolver; /*!< boost::asio TCP resolver */
+	std::thread* t;  /*!< Thread polling Input/Output event from io_service */
 };
-const std::vector<std::string> Server::cmds = { "display", "send", "get", "print", "annotate", "stats", "patchwork" };
+const std::vector<std::string> Server::cmds = { "display", "send", "get", "print", "annotate", "stats", "patchwork", "help" };
 
 
 #if _WIN32

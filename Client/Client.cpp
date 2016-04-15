@@ -17,13 +17,13 @@
 #if _WIN32
 #include <tchar.h>
 #endif
-#include "chat_message.hpp"
+#include "Message.hpp"
 #include "Shape.h"
 
 using boost::asio::ip::tcp;
 using namespace Patchwork;
 
-typedef std::deque<chat_message> chat_message_queue;
+typedef std::deque<Message> Message_queue;
 
 /*! \file Client.cpp
 \brief File containing the client part of the application
@@ -55,9 +55,9 @@ public:
   }
   /*!
   Tells the socket that we want to write a message
-  /param msg the message to send
+  \param msg the message to send
   */
-  void write(const chat_message& msg)
+  void write(const Message& msg)
   {
     io_service_.post(
         [this, msg]()
@@ -100,7 +100,7 @@ private:
   void do_read_header()
   {
     boost::asio::async_read(socket_,
-        boost::asio::buffer(read_msg_.data(), chat_message::header_length),
+        boost::asio::buffer(read_msg_.data(), Message::header_length),
         [this](boost::system::error_code ec, std::size_t /*length*/)
         {
           if (!ec && read_msg_.decode_header())
@@ -127,7 +127,7 @@ private:
 			  if (std::string(read_msg_.body()) == "GET")
 			  {
 				  //Send image
-				  chat_message msg;
+				  Message msg;
 				  std::string s;
 				  img.serialize(s);
 				  msg.body_length(s.length());
@@ -176,13 +176,13 @@ private:
 private:
   boost::asio::io_service& io_service_; /*!< boost::asio IO service */
   tcp::socket socket_; /*!< boost::asio TCP Socket */
-  chat_message read_msg_; /*!< Message read from the socket */
-  chat_message_queue write_msgs_; /*!< Queue of messages to be sent */
+  Message read_msg_; /*!< Message read from the socket */
+  Message_queue write_msgs_; /*!< Queue of messages to be sent */
   Image& img; /*!< REference to the image currently owned by the Client */
 };
 
 /*!
-Class that handle the Client's input commands, basically polling commands from the console
+Class that handle the Client's input commands, basically polling commands from the console and reacting to it
 */
 class Client
 {
@@ -214,9 +214,9 @@ public :
 	}	
 	/*!
 	Class that creates the ClientIO and poll user input to execute commands
-	/param ip TCP Socket IP
-	/param port TCP Socket port
-	/param service boost::asio io_service
+	\param ip TCP Socket IP
+	\param port TCP Socket port
+	\param service boost::asio io_service
 	*/
 	Client(std::string ip, std::string port, boost::asio::io_service& service) : io_service(service)
 	{
@@ -251,6 +251,7 @@ private:
 		char line[LINE_MAX_SIZE];
 		std::string cmd;
 		//    While the users is entering commands we react to it
+		std::cout << "Available commands : ";
 		print_commands();
 		std::cout << std::endl << "Command : ";
 		while (std::cin.getline(line, LINE_MAX_SIZE))
@@ -449,7 +450,7 @@ private:
 				case Commands::SEND:
 				{
 					// Send the image to the server
-					chat_message msg;
+					Message msg;
 					std::string serial;
 					img->serialize(serial);
 					msg.body_length(serial.size());

@@ -11,10 +11,6 @@ Test suit
 
 Essayer de faire des tests server/client ? Problème avec l'architecture asynchrone c'est pas simple  (probablement aps de test suit)
 
-Jeudi/Vendredi
-FAIRE LA DOCUMENTATION (début d'exemple dans un des fichiers)
-TESTER DE BUILD AVEC VS2015 ET FAIRE UN MAKEFILE SUR UBUNTU
-
 
 DONE
 
