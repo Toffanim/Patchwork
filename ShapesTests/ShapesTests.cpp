@@ -27,10 +27,10 @@ int _tmain(int argc, _TCHAR* argv[])
 		}
 		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 0x00);
 		SDL_RenderClear(renderer);
-		c.display(renderer);
-		p.display(renderer);
-		l.display(renderer);
-		e.display(renderer);
+		c.display(renderer, 1.f);
+		p.display(renderer, 1.f);
+		l.display(renderer, 1.f);
+		e.display(renderer, 1.f);
 		SDL_RenderPresent(renderer);
 	}
 	

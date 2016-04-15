@@ -31,28 +31,28 @@ typedef std::deque<chat_message> chat_message_queue;
 
 //----------------------------------------------------------------------
 
-class chat_participant
+class ClientConnection
 {
 public:
-  virtual ~chat_participant() {}
+	virtual ~ClientConnection() {}
   virtual void deliver(const chat_message& msg) = 0;
-  Image img;
+  Image* img;
   int ID;
 };
 
-typedef std::shared_ptr<chat_participant> chat_participant_ptr;
+typedef std::shared_ptr<ClientConnection> ClientConnection_ptr;
 
 //----------------------------------------------------------------------
 
-class chat_room
+class Room
 {
 public:
-  void join(chat_participant_ptr participant)
+	void join(ClientConnection_ptr participant)
   {
     participants_.insert(participant);
   }
 
-  void leave(chat_participant_ptr participant)
+	void leave(ClientConnection_ptr participant)
   {
     participants_.erase(participant);
   }
@@ -70,7 +70,7 @@ public:
 		  //get this participant image to string then send it
 		  chat_message msg;
 		  std::string s;
-		  participant->img.serialize(s);
+		  participant->img->serialize(s);
 		  msg.body_length(s.length());
 		  std::memcpy(msg.body(), s.c_str(), msg.body_length());
 		  msg.encode_header();
@@ -99,34 +99,35 @@ public:
 	  {
 		  if (participant->ID == ID)
 		  {
-			  participant->img.annotate(msg);
+			  participant->img->annotate(msg);
 		  }
 	  }
   }
 
-  std::set<chat_participant_ptr> participants()
+  std::set<ClientConnection_ptr> participants()
   {
 	  return participants_;
   }
 
 private:
-  std::set<chat_participant_ptr> participants_;
+	std::set<ClientConnection_ptr> participants_;
   enum { max_recent_msgs = 100 };
   chat_message_queue recent_msgs_;
 };
 
 //----------------------------------------------------------------------
 
-class chat_session
-  : public chat_participant,
-    public std::enable_shared_from_this<chat_session>
+class Client
+  : public ClientConnection,
+    public std::enable_shared_from_this<Client>
 {
 public:
-  chat_session(tcp::socket socket, chat_room& room, int ID)
+  Client(tcp::socket socket, Room& room, int ID)
     : socket_(std::move(socket)),
       room_(room)
   {
 	  this->ID = ID;
+	  img = new Image();
   }
 
   void start()
@@ -155,7 +156,6 @@ private:
         {
           if (!ec && read_msg_.decode_header())
           {
-			  std::cout << "Received msg : header read" << std::endl;
             do_read_body();
           }
           else
@@ -174,9 +174,8 @@ private:
         {
           if (!ec)
           {
-			std::cout << "Received msg : body read" << read_msg_.body() << std::endl;
 			std::string s = std::string(read_msg_.body());
-			img.deserialize(s);
+			img->deserialize(s);
             do_read_header();
           }
           else
@@ -210,17 +209,17 @@ private:
   }
 
   tcp::socket socket_;
-  chat_room& room_;
+  Room& room_;
   chat_message read_msg_;
   chat_message_queue write_msgs_;
 };
 
 //----------------------------------------------------------------------
 
-class Server
+class ServerIO
 {
 public:
-  Server(boost::asio::io_service& io_service,
+  ServerIO(boost::asio::io_service& io_service,
       const tcp::endpoint& endpoint)
     : acceptor_(io_service, endpoint),
 	socket_(io_service), ID(0)
@@ -230,17 +229,15 @@ public:
 
   void do_send()
   {
-	  std::cout << "Do send" << std::endl;
 	  chat_message msg;
-	  msg.body_length(std::strlen("TEST"));
-	  std::memcpy(msg.body(), "TEST", msg.body_length());
+	  msg.body_length(std::strlen("GET"));
+	  std::memcpy(msg.body(), "GET", msg.body_length());
 	  msg.encode_header();
 	  room_.deliver( msg );
   }
 
   void do_send_back()
   {
-	  std::cout << "Do send back" << std::endl;
 	  room_.send_back_images();
   }
 
@@ -254,7 +251,7 @@ public:
 	  room_.annotate(ID, msg);
   }
 
-  chat_room& room()
+  Room& room()
   {
 	  return room_;
   }
@@ -267,7 +264,7 @@ private:
         {
           if (!ec)
           {
-            std::make_shared<chat_session>(std::move(socket_), room_, ID++)->start();
+            std::make_shared<Client>(std::move(socket_), room_, ID++)->start();
 
 			std::cout << "Nouvelle connection " << ID << std::endl;
           }
@@ -278,11 +275,250 @@ private:
 
   tcp::acceptor acceptor_;
   tcp::socket socket_;
-  chat_room room_;
+  Room room_;
   int ID;
 };
 
 //----------------------------------------------------------------------
+
+class Server
+{
+public:
+	const enum Commands { DISPLAY = 0, SEND, GET, PRINT, ANNOTATE, STATS, PATCHWORK, UNKNOWN };
+	static const std::vector<std::string> cmds;
+
+	static void print_commands()
+	{
+		for (auto cmd : cmds)
+			std::cout << " " << cmd;
+	}
+
+	Commands CmdStringToEnum(std::string s)
+	{
+		for (int i = 0; i < cmds.size(); ++i)
+		{
+			if (cmds.at(i) == s)
+			{
+				return static_cast<Commands>(i);
+			}
+		}
+		return Commands::UNKNOWN;
+	}
+
+	Server(boost::asio::io_service& service) : io_service(service)
+	{
+		tcp::endpoint endpoint(tcp::v4(), 8080);
+		s = new ServerIO(io_service, std::move(endpoint));
+		std::thread* t = new std::thread([&](){ io_service.run(); });
+		SDL_Init(SDL_INIT_VIDEO);
+		start_polling();
+	};
+
+private:
+	void start_polling()
+	{
+		const unsigned int LINE_MAX_SIZE = 256;
+		// Start polling for commands
+		char line[LINE_MAX_SIZE];
+		std::string cmd;
+		//    While the users is entering commands we react to it
+		while (std::cin.getline(line, LINE_MAX_SIZE))
+		{
+			cmd = std::string(line);
+
+			switch (CmdStringToEnum(cmd))
+			{
+				case Commands::DISPLAY:
+				{
+					//TODO : make the user chose the image he wants to see
+					int ID;
+					std::string annotation;
+					s->do_print();
+					std::cout << "Choose an ID from the list :";
+					std::cin >> ID;
+					bool found_ID = false;
+					for (auto participant : s->room().participants())
+					{
+						if (participant->ID == ID)
+						{
+							SDL_CreateWindowAndRenderer(800, 600, 0, &window, &renderer);
+							while (1) {
+								SDL_PollEvent(&event);
+								if (event.type == SDL_QUIT) {
+									break;
+								}
+								SDL_SetRenderDrawColor(renderer, 255, 255, 255, 0x00);
+								SDL_RenderClear(renderer);
+								participant->img->display(renderer);
+								SDL_RenderPresent(renderer);
+							}
+							SDL_DestroyWindow(window);
+							found_ID = true;
+							break;
+						}
+					}
+					if (!found_ID)
+					{
+						std::cout << "ID : " << ID << " not found" << std::endl;
+					}
+				}break;
+
+				case Commands::SEND:
+				{
+					s->do_send_back();
+				}break;
+
+				case Commands::GET:
+				{
+					s->do_send();
+				}break;
+
+				case Commands::PATCHWORK:
+				{
+					Image* Im = new Image();
+					int last_x = 0;
+					int origin_x = 0;
+					for (auto participant : s->room().participants())
+					{
+						if (last_x == 0)
+						{
+							Im->add_component(participant->img);
+							BoundingBox bb = participant->img->bounding_box();
+							int w = bb.x_max - bb.x_min;
+							last_x = last_x + (w / 2);
+						}
+						else
+						{
+							BoundingBox bb = participant->img->bounding_box();
+							int w = bb.x_max - bb.x_min;
+							origin_x = last_x + (w / 2);
+							participant->img->origin(Vec2(origin_x, 0));
+							Im->add_component(participant->img);
+							last_x = last_x + w;							
+						}						
+					}
+					SDL_CreateWindowAndRenderer(800, 600, 0, &window, &renderer);
+					while (1) {
+						SDL_PollEvent(&event);
+						if (event.type == SDL_QUIT) {
+							break;
+						}
+						SDL_SetRenderDrawColor(renderer, 255, 255, 255, 0x00);
+						SDL_RenderClear(renderer);
+						Im->display(renderer);
+						SDL_RenderPresent(renderer);
+					}
+					SDL_DestroyWindow(window);
+					for (auto participant : s->room().participants())
+					{
+						participant->img->origin(Vec2(0, 0));
+					}
+				}break;
+
+				case Commands::ANNOTATE:
+				{
+					//Make the user chose the image he wants to annotate
+					// and then another cin to get the annotation
+					s->do_print();
+					int ID;
+					std::string annotation;
+					std::cout << "Choose an ID from the list :";
+					std::cin >> ID;
+					bool found_ID = false;
+					for (auto participant : s->room().participants())
+					{
+						if (participant->ID == ID)
+						{
+							std::cout << "Enter your annotation :";
+							std::getline(std::cin, annotation);
+							std::getline(std::cin, annotation);
+							s->do_annotation(ID, annotation);
+							found_ID = true;
+						}
+					}
+					if (!found_ID)
+					{
+						std::cout << "ID : " << ID << " not found" << std::endl;
+					}
+				}break;
+
+				case Commands::STATS:
+				{
+					//NOTE(marc) : D'après le standard, les types primitifs d'une map sont 
+					// zero-initialisé, ont as pas besoin de la faire nous même
+					std::map< Shape::Derivedtype, int > shapes_count;
+					std::map< Color, int > color_count;
+					for (auto participant : s->room().participants())
+					{
+						for (auto shape : participant->img->components())
+						{
+							if (shape->type() == Shape::IMAGE)
+							{
+								Image * im = static_cast<Image*>(shape);
+								for (auto imageShape : im->components())
+								{
+									shapes_count[imageShape->type()]++;
+									color_count[imageShape->color()]++;
+								}
+							}
+							shapes_count[shape->type()]++;
+							color_count[shape->color()]++;
+						}
+					}
+
+					for (auto key_value : shapes_count)
+					{
+						switch (key_value.first)
+						{
+							case Shape::Derivedtype::CIRCLE:
+							{
+								std::cout << "Circle count : " << key_value.second << std::endl;
+							}break;
+							case Shape::Derivedtype::POLYGON:
+							{
+								std::cout << "Polygon count : " << key_value.second << std::endl;
+							}break;
+							case Shape::Derivedtype::LINE:
+							{
+								std::cout << "Line count : " << key_value.second << std::endl;
+							}break;
+							case Shape::Derivedtype::ELLIPSE:
+							{
+								std::cout << "Ellipse count : " << key_value.second << std::endl;
+							}break;
+						}
+					}
+
+					for (auto key_value : color_count)
+					{
+						std::cout << key_value.first << " : " << key_value.second << std::endl;
+					}
+				}break;
+
+				case Commands::PRINT:
+				{
+					s->do_print();
+				}break;
+
+				default:
+				{
+					std::cout << "Unknow command" << std::endl;
+				}
+			}
+		}
+		t->join();
+	}
+
+	ServerIO* s;
+	SDL_Event event;
+	SDL_Window *window;
+	SDL_Renderer *renderer;
+	boost::asio::io_service& io_service;
+	tcp::resolver* resolver;
+	std::thread* t;
+	std::vector<Image*> images;
+};
+const std::vector<std::string> Server::cmds = { "display", "send", "get", "print", "annotate", "stats", "patchwork" };
 
 int _tmain(int argc, _TCHAR* argv[])
 {
@@ -296,148 +532,8 @@ int _tmain(int argc, _TCHAR* argv[])
       //return 1;
     }
 #endif
-
-	SDL_Init(SDL_INIT_VIDEO);
-	SDL_Event event;
-	SDL_Window *window;
-	SDL_Renderer *renderer;
-	int ID = 0;
-
-    boost::asio::io_service io_service;
-	//tcp::endpoint endpoint(tcp::v4(), std::atoi(argv[i]));
-	tcp::endpoint endpoint(tcp::v4(), 8080);
-	Server s(io_service, endpoint);
-	std::thread t([&io_service](){ io_service.run(); });
-
-	char line[chat_message::max_body_length + 1];
-	std::string line_str;
-	while (std::cin.getline(line, chat_message::max_body_length + 1))
-	{
-		line_str = std::string(line);
-		if (line_str == "display")
-		{
-			//TODO : make the user chose the image he wants to see
-			int ID;
-			std::string annotation;
-			s.do_print();
-			std::cout << "Choose an ID from the list :";
-			std::cin >> ID;
-			bool found_ID = false;
-			for (auto participant : s.room().participants())
-			{
-				if (participant->ID == ID)
-				{
-					SDL_CreateWindowAndRenderer(800, 600, 0, &window, &renderer);
-					while (1) {
-						SDL_PollEvent(&event);
-						if (event.type == SDL_QUIT) {
-							break;
-						}
-						SDL_SetRenderDrawColor(renderer, 255, 255, 255, 0x00);
-						SDL_RenderClear(renderer);
-						participant->img.display(renderer);
-						SDL_RenderPresent(renderer);
-					}
-					SDL_DestroyWindow(window);
-					found_ID = true;
-					break;
-				}
-			}
-			if (!found_ID)
-			{
-				std::cout << "ID : " << ID << " not found" << std::endl;
-			}
-		}
-
-		if (line_str == "send_back")
-		{
-			s.do_send_back();
-		}
-
-		if (line_str == "get_drawings")
-		{
-			s.do_send();
-		}
-
-		if (line_str == "annotate")
-		{
-			//Make the user chose the image he wants to annotate
-			// and then another cin to get the annotation
-			s.do_print();
-			int ID;
-			std::string annotation;
-			std::cout << "Choose an ID from the list :";
-			std::cin >> ID;
-			bool found_ID = false;
-			for (auto participant : s.room().participants())
-			{
-				if (participant->ID == ID)
-				{
-					std::cout << "Enter your annotation :";
-					std::getline(std::cin, annotation);
-					std::getline(std::cin, annotation);
-					s.do_annotation(ID, annotation);
-					found_ID = true;
-				}
-			}
-			if (!found_ID)
-			{
-				std::cout << "ID : " << ID << " not found" << std::endl;
-			}
-		}
-
-		if (line_str == "print_list")
-		{
-			s.do_print();
-		}
-
-		if (line_str == "make_stats")
-		{
-			//NOTe(marc) : D'après le standard, les types primitifs d'une map sont 
-			// zero-initialisé, ont as pas besoin de la faire nous même
-			std::map< Shape::Derivedtype, int > shapes_count;
-			std::map< Color, int > color_count;
-			for (auto participant : s.room().participants())
-			{
-				for (auto shape : participant->img.components())
-				{
-					shapes_count[shape->type()]++;
-					color_count[shape->color()]++;
-				}
-			}
-			
-			for (auto key_value : shapes_count)
-			{
-				switch (key_value.first)
-				{
-					case Shape::Derivedtype::CIRCLE:
-					{
-						std::cout << "Circle count : " << key_value.second << std::endl;
-					}break;
-					case Shape::Derivedtype::POLYGON:
-					{
-						std::cout << "Polygon count : " << key_value.second << std::endl;
-					}break;
-					case Shape::Derivedtype::LINE:
-					{
-						std::cout << "Line count : " << key_value.second << std::endl;
-					}break;
-					case Shape::Derivedtype::ELLIPSE:
-					{
-						std::cout << "Ellipse count : " << key_value.second << std::endl;
-					}break;
-				}
-			}
-
-			for (auto key_value : color_count)
-			{
-				std::cout << key_value.first << " : " << key_value.second << std::endl;
-			}
-		}
-	}
-
-
-	t.join();
+	boost::asio::io_service io_service;
+	Server s(io_service);
   }
   catch (std::exception& e)
   {

@@ -23,10 +23,10 @@ using namespace Patchwork;
 
 typedef std::deque<chat_message> chat_message_queue;
 
-class chat_client
+class ClientIO
 {
 public:
-  chat_client(boost::asio::io_service& io_service,
+  ClientIO(boost::asio::io_service& io_service,
       tcp::resolver::iterator endpoint_iterator,
 	  Image& img)
     : io_service_(io_service),
@@ -93,7 +93,7 @@ private:
         {
           if (!ec)
           {
-			  if (std::string(read_msg_.body()) == "TEST")
+			  if (std::string(read_msg_.body()) == "GET")
 			  {
 				  //Send image
 				  chat_message msg;
@@ -152,8 +152,14 @@ private:
 class Client
 {
 public :
-	const enum Commands { DISPLAY = 0, MAKE, TRANSFORM, PRINT, SEND, DELETE_, UNKNOWN };
+	const enum Commands { DISPLAY = 0, MAKE, TRANSFORM, PRINT, SEND, DELETE_, HELP, UNKNOWN };
 	static const std::vector<std::string> cmds;
+
+	static void print_commands()
+	{
+		for (auto cmd : cmds)
+			std::cout << " " << cmd;
+	}
 
 	Commands CmdStringToEnum(std::string s)
 	{
@@ -172,8 +178,9 @@ public :
 		img = new Image();
 		resolver = new tcp::resolver(io_service);
 		auto endpoint_iterator = resolver->resolve({ "127.0.0.1", "8080" });
-		c = new chat_client(io_service, endpoint_iterator, *img);
+		c = new ClientIO(io_service, endpoint_iterator, *img);
 		std::thread* t = new std::thread([&](){ io_service.run(); });
+		SDL_Init(SDL_INIT_VIDEO);
 		start_polling();
 	};
 
@@ -210,8 +217,16 @@ private:
 					SDL_DestroyWindow(window);
 				}break;
 
+				case Commands::HELP:
+				{
+					std::cout << "available commands : ";
+					print_commands();
+				}break;
+
 				case Commands::MAKE:
 				{
+					std::cout << "Available shapes : ";
+					Shape::print_shapes();
 					std::cout << "Enter Shape Type : ";
 					std::cin >> cmd;
 					switch (Shape::ShapeStringToEnum(cmd))
@@ -357,54 +372,69 @@ private:
 				{
 					int id;
 					std::string buf;
-					std::cout << "ID ?" << std::endl;
+					print_components();
+					std::cout << "Choose a shape ID : ";
 					std::cin >> id;
-					std::cout << "Which one ? " << std::endl;
+					std::cout << "Available transforms : ";
+					Shape::print_transforms();
+					std::cout << "Choose a transformation : ";
 					std::cin >> buf;
-					if (buf == "homothety")
+					switch (Shape::FuncStringToEnum(buf))
 					{
-						float ratio;
-						std::cout << "Ratio : " << std::endl;
-						std::cin >> ratio;
-						img->components().at(id)->homothety(ratio);
-					}
-					else if (buf == "rotate")
-					{
-						float angle;
-						std::cout << "Angle : " << std::endl;
-						std::cin >> angle;
-						img->components().at(id)->rotate(angle);
-					}
-					else if (buf == "translate")
-					{
-						float x, y;
-						std::cout << "Translation X : " << std::endl;
-						std::cin >> x;
-						std::cout << "Translation Y : " << std::endl;
-						std::cin >> y;
-						img->components().at(id)->translate(Vec2(x, y));
-					}
-					else if (buf == "centralSym")
-					{
-						float x, y;
-						std::cout << "Center X : " << std::endl;
-						std::cin >> x;
-						std::cout << "Center Y : " << std::endl;
-						std::cin >> y;
-						img->components().at(id)->centralSym(Vec2(x, y));
-					}
-					else if (buf == "axialSym")
-					{
-						float x, y, dir_x, dir_y;
-						std::cout << "Axe point X : " << std::endl;
-						std::cin >> x;
-						std::cout << "Axe point Y : " << std::endl;
-						std::cin >> y;
-						std::cout << "Axe direction X : " << std::endl;
-						std::cin >> dir_x;
-						std::cout << "Axe direction Y : " << std::endl;
-						std::cin >> dir_y;
-						img->components().at(id)->axialSym(Vec2(x, y), Vec2(dir_x, dir_y));
+						case Shape::HOMOTHETY:
+						{
+							float ratio;
+							std::cout << "Ratio : " << std::endl;
+							std::cin >> ratio;
+							img->components().at(id)->homothety(ratio);
+						}break;
+
+						case Shape::AXIAL_SYMETRY:
+						{
+							float x, y, dir_x, dir_y;
+							std::cout << "Axe point X : " << std::endl;
+							std::cin >> x;
+							std::cout << "Axe point Y : " << std::endl;
+							std::cin >> y;
+							std::cout << "Axe direction X : " << std::endl;
+							std::cin >> dir_x;
+							std::cout << "Axe direction Y : " << std::endl;
+							std::cin >> dir_y;
+							img->components().at(id)->axialSym(Vec2(x, y), Vec2(dir_x, dir_y));
+						}break;
+
+						case Shape::CENTRAL_SYMETRY:
+						{
+							float x, y;
+							std::cout << "Center X : " << std::endl;
+							std::cin >> x;
+							std::cout << "Center Y : " << std::endl;
+							std::cin >> y;
+							img->components().at(id)->centralSym(Vec2(x, y));
+						}break;
+
+						case Shape::ROTATION:
+						{
+							float angle;
+							std::cout << "Angle : " << std::endl;
+							std::cin >> angle;
+							img->components().at(id)->rotate(angle);
+						}break;
+
+						case Shape::TRANSLATE:
+						{
+							float x, y;
+							std::cout << "Translation X : " << std::endl;
+							std::cin >> x;
+							std::cout << "Translation Y : " << std::endl;
+							std::cin >> y;
+							img->components().at(id)->translate(Vec2(x, y));
+						}break;
+
+						default:
+						{
+							std::cout << "Unknown transformation" << std::endl;
+						}
 					}
 				}break;
 
@@ -421,13 +451,19 @@ private:
 						print_components();
 						std::cout << "Enter ID : " << std::endl;
 						std::cin >> id;
-						img->components().erase(img->components().begin() + id);
+						auto it = img->components().begin();
+						img->components().erase(it);
 					}
 					catch (std::exception& e)
 					{
 						std::cout << "Unknown ID" << std::endl;
 					}
 				}break;
+
+				default:
+				{
+					std::cout << "Unknow command" << std::endl;
+				}
 			}
 		}
 		c->close();
@@ -442,7 +478,7 @@ private:
 		}
 	}
 
-	chat_client* c;
+	ClientIO* c;
 	SDL_Event event;
 	SDL_Window *window;
 	SDL_Renderer *renderer;
@@ -451,7 +487,7 @@ private:
 	std::thread* t;
 	Image* img;
 };
-const std::vector<std::string> Client::cmds = { "display", "make", "transform", "print", "send", "delete" };
+const std::vector<std::string> Client::cmds = { "display", "make", "transform", "print", "send", "delete" , "help"};
 
 int _tmain(int argc, _TCHAR* argv[])
 {

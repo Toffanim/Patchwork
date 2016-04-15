@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <sstream>
 #include <mutex>
+#include <algorithm>
 #include "Maths.h"
 #include "SDL2\SDL.h"
 
@@ -47,13 +48,13 @@ namespace Patchwork
 		int x_min; /*!< Upper corner x coordinate */
 		int y_max; /*!< Lower corner y coordinate */
 		int y_min; /*!< Upper corner y coordinate*/
-		BoundingBox() :x_max(0), y_max(0), x_min(10000), y_min(10000){}
+		BoundingBox() :x_max(-10000), y_max(-10000), x_min(10000), y_min(10000){}
 	};
 
 	class Transformable
 	{
-		virtual float area() const = 0;
-		virtual float perimeter() const = 0;
+		virtual float area() = 0;
+		virtual float perimeter() = 0;
 		virtual void translate(const Vec2& t) = 0;
 		virtual void homothety(float ratio) = 0;
 		virtual void homothety(const Vec2& s, float ratio) = 0;
@@ -66,10 +67,22 @@ namespace Patchwork
 	class Shape
 	{
 	public:
-		enum Derivedtype { CIRCLE=0, POLYGON, LINE, ELLIPSE, END_ENUM };
+		enum Derivedtype { CIRCLE=0, POLYGON, LINE, ELLIPSE, IMAGE, END_ENUM };
 		enum Functions { ROTATION = 0, HOMOTHETY, TRANSLATE, AXIAL_SYMETRY, CENTRAL_SYMETRY, UNKNOWN };
 		static const std::vector<std::string> transforms;
 		static const std::vector<std::string> shapes;
+
+		static void print_transforms()
+		{
+			for (auto transform : transforms)
+				std::cout << " " << transform;
+		}
+
+		static void print_shapes()
+		{
+			for (auto shape : shapes)
+				std::cout << " " << shape;
+		}
 
 		Shape(Derivedtype type, Color color) : m_type(type), m_color(color){};
 		~Shape(){};
@@ -101,8 +114,8 @@ namespace Patchwork
 			return Functions::UNKNOWN;
 		}
 
-		virtual float area() const = 0;
-		virtual float perimeter() const = 0;
+		virtual float area() = 0;
+		virtual float perimeter() = 0;
 		virtual void translate(const Vec2& t) = 0;
 		virtual void homothety(float ratio) = 0;
 		virtual void homothety(const Vec2& s, float ratio) = 0;
@@ -110,8 +123,9 @@ namespace Patchwork
 		virtual void rotate(const Vec2& p, double angle) = 0;
 		virtual void centralSym(const Vec2& c) = 0;
 		virtual void axialSym(const Vec2& p, const Vec2& d) = 0;
-		virtual void display(SDL_Renderer* renderer) = 0;
+		virtual void display(SDL_Renderer* renderer, float ratio) = 0;
 		virtual void serialize( std::string& serial ) = 0;
+		virtual BoundingBox bounding_box() = 0;
 
 		friend std::ostream& operator<< (std::ostream &out, Shape &Shape);
 	protected:
@@ -137,13 +151,13 @@ namespace Patchwork
 		const float radius() const { return(m_radius); }
 
 		//Transformable interface functions
-		float area() const { return(PI * (m_radius*m_radius)); }
-		float perimeter() const { return(2 * PI* m_radius); }
+		float area() { return(PI * (m_radius*m_radius)); }
+		float perimeter() { return(2 * PI* m_radius); }
 		void homothety(float ratio) { m_radius *= ratio; }
 		void homothety(const Vec2& s, float ratio) 
 		{  
-			Vec2 u = (s - m_origin);
-			m_origin = m_origin + ratio*u;
+			Vec2 u = ( m_origin - s);
+			m_origin = s + ratio*u;
 			m_radius *= ratio;
 		}
 		void rotate(const Vec2& p, double angle)
@@ -175,20 +189,33 @@ namespace Patchwork
 		}
 
 		//Displayable interface functions
-		void display(SDL_Renderer* renderer)
+		void display(SDL_Renderer* renderer, float ratio)
 		{
-			SDL_SetRenderDrawColor(renderer, m_color.r, m_color.g, m_color.b, 0x00);
-			for (int i = -(int)(m_radius); i < (int)(m_radius); ++i)
+			if (ratio != 1.f)
 			{
-				for (int j = -(int)(m_radius); j < (int)(m_radius); ++j)
+				Circle *c = new Circle( *this );
+				c->homothety(Vec2(0, 0), ratio);
+				c->display(renderer, 1.f);
+				delete c;
+			}
+			else
+			{
+				SDL_SetRenderDrawColor(renderer, m_color.r, m_color.g, m_color.b, 0x00);
+				int w, h;
+				SDL_GetRendererOutputSize(renderer, &w, &h);
+				Vec2 center((w / 2), (h / 2));
+				Vec2 displayablePoint = m_origin + center;
+				for (int i = -(int)(m_radius); i < (int)(m_radius); ++i)
 				{
-					if (i*i + j*j <= m_radius*m_radius)
+					for (int j = -(int)(m_radius); j < (int)(m_radius); ++j)
 					{
-						SDL_RenderDrawPoint(renderer, (int)(m_origin.x + i), (int) (m_origin.y + j));
+						if (i*i + j*j <= m_radius*m_radius)
+						{
+							SDL_RenderDrawPoint(renderer, (int)(displayablePoint.x + i), (int)(displayablePoint.y + j));
+						}
 					}
 				}
 			}
-
 		}
 
 		void serialize(std::string& serial)
@@ -244,7 +271,7 @@ namespace Patchwork
 		const std::vector<Vec2>& points() const { return(m_points); }
 
 		//Transformable interface functions
-		float area() const
+		float area()
 		{
 			float a = 0.f;
 			for (std::vector<Vec2>::const_iterator it = m_points.begin() + 1; it != m_points.end() - 1; ++it)
@@ -254,7 +281,7 @@ namespace Patchwork
 			return(a);
 		}
 
-		float perimeter() const
+		float perimeter()
 		{
 			float p = 0.f;
 			for (std::vector<Vec2>::const_iterator it = m_points.begin(); it != m_points.end(); ++it)
@@ -273,16 +300,16 @@ namespace Patchwork
 			Vec2 center = Vec2(bb.x_max - ((bb.x_max - bb.x_min) / 2.f), bb.y_max - ((bb.y_max - bb.y_min) / 2.f));
 			for (std::vector<Vec2>::iterator it = m_points.begin(); it != m_points.end(); ++it)
 			{
-				Vec2 u = (center - (*it));			
-				(*it) = (*it) + ratio*u;
+				Vec2 u = ((*it) - center);
+				(*it) = center + ratio*u;
 			}
 		}
 		void homothety(const Vec2& s, float ratio) 
 		{  
 			for (std::vector<Vec2>::iterator it = m_points.begin(); it != m_points.end(); ++it)
 			{
-				Vec2 u = (s - (*it));
-				(*it) = (*it) + ratio*u;
+				Vec2 u = ((*it) - s);
+				(*it) = s + ratio*u;
 			}
 		}
 		void rotate(const Vec2& p, double angle)
@@ -339,17 +366,30 @@ namespace Patchwork
 			}
 		}
 
-		void display(SDL_Renderer* renderer)
+		void display(SDL_Renderer* renderer, float ratio)
 		{
-			SDL_SetRenderDrawColor(renderer, m_color.r, m_color.g, m_color.b, 0x00);
-			BoundingBox bb = bounding_box();
-			for (int i = bb.x_min; i < bb.x_max; ++i)
+			if (ratio != 1.f)
 			{
-				for (int j = bb.y_min; j < bb.y_max; ++j)
+				Polygon *c = new Polygon(*this);
+				c->homothety(Vec2(0, 0), ratio);
+				c->display(renderer, 1.f);
+				delete c;
+			}
+			else
+			{
+				SDL_SetRenderDrawColor(renderer, m_color.r, m_color.g, m_color.b, 0x00);
+				int w, h;
+				SDL_GetRendererOutputSize(renderer, &w, &h);
+				Vec2 center((w / 2), (h / 2));
+				BoundingBox bb = bounding_box();
+				for (int i = bb.x_min - 1; i < bb.x_max + 1; ++i)
 				{
-					if (isPointInPolygon(Vec2(i, j)))
+					for (int j = bb.y_min - 1; j < bb.y_max + 1; ++j)
 					{
-						SDL_RenderDrawPoint(renderer, i, j);
+						if (isPointInPolygon(Vec2(i, j)))
+						{
+							SDL_RenderDrawPoint(renderer, i + center.x, j + center.y);
+						}
 					}
 				}
 			}
@@ -442,8 +482,8 @@ namespace Patchwork
 		const Vec2& direction() const { return (m_direction); }
 
 		//Transformable interface functions
-		float area() const { return(1.f); }
-		float perimeter() const { return(1.f); }
+		float area() { return(1.f); }
+		float perimeter() { return(1.f); }
 		void homothety(float ratio) { /*NON SENSE*/ }
 		void homothety(const Vec2& s, float ratio) { /*NON SENSE*/ }
 		void rotate(float angle) 
@@ -480,10 +520,14 @@ namespace Patchwork
 		void translate(const Vec2& t) { m_point = m_point + t; }
 		void centralSym(const Vec2& c) { Vec2 t = 2 * (c - m_point); translate(t); }
 		void axialSym(const Vec2& p, const Vec2& d){ /*NON SENSE*/ }
-		void display(SDL_Renderer* renderer)
+		void display(SDL_Renderer* renderer, float ratio)
 		{
 			SDL_SetRenderDrawColor(renderer, m_color.r, m_color.g, m_color.b, 0x00);
-			SDL_RenderDrawLine(renderer, (int)m_point.x, (int)m_point.y, (int)(m_point.x + m_direction.x), (int) (m_point.y + m_direction.y));
+			int w, h;
+			SDL_GetRendererOutputSize(renderer, &w, &h);
+			Vec2 center((w / 2), (h / 2));
+			Vec2 displayablePoint = m_point + center;
+			SDL_RenderDrawLine(renderer, (int)displayablePoint.x, (int)displayablePoint.y, (int)(displayablePoint.x + m_direction.x), (int)(displayablePoint.y + m_direction.y));
 		}
 
 		void serialize(std::string& serial)
@@ -500,10 +544,17 @@ namespace Patchwork
 
 		BoundingBox bounding_box()
 		{
-			//infinite so we put everything at 0
 			BoundingBox bb;
-			bb.x_max = 0;
-			bb.y_max = 0;
+			Vec2 p2 = m_point + m_direction;
+			if (p2.x < m_point.x)
+			{	bb.x_min = p2.x;
+			    bb.x_max = m_point.x;
+		    }
+			if (p2.y < m_point.y)
+			{
+				bb.y_min = p2.y;
+				bb.y_max = m_point.y;
+			}
 			return bb;
 		}
 
@@ -512,6 +563,7 @@ namespace Patchwork
 	private:
 		Vec2 m_point;
 		Vec2 m_direction;
+		bool isSegment= false;
 	};
 
 	bool operator==(const Line& a, const Line& b)
@@ -548,8 +600,8 @@ namespace Patchwork
 		const Vec2& radius() const { return(m_radius); }
 
 		//Transformable interface function
-		float area() const { return(PI * m_radius.x * m_radius.y); }
-		float perimeter() const
+		float area() { return(PI * m_radius.x * m_radius.y); }
+		float perimeter()
 		{ //Ramanujan approx  
 			float h = ((m_radius.x - m_radius.y)*(m_radius.x - m_radius.y)) / ((m_radius.x + m_radius.y) * (m_radius.x + m_radius.y));
 			float p = PI * (m_radius.x + m_radius.y) * (1 + (3 * h) / (10 + fast_sqrt(4 - 3 * h)));
@@ -558,8 +610,8 @@ namespace Patchwork
 		void homothety(float ratio) { m_radius = ratio*m_radius; }
 		void homothety(const Vec2& s, float ratio) 
 		{
-			Vec2 u = (s - m_origin);
-			m_origin = m_origin + ratio*u;
+			Vec2 u = (m_origin - s);
+			m_origin = s + ratio*u;
 			m_radius = ratio * m_radius;
 		}
 		void rotate(const Vec2& c, double angle) { /* CANT DO IT */ }
@@ -577,16 +629,20 @@ namespace Patchwork
 		}
 
 		//Displayable interface function
-		void display(SDL_Renderer* renderer)
+		void display(SDL_Renderer* renderer, float ratio)
 		{
 			SDL_SetRenderDrawColor(renderer, m_color.r, m_color.g, m_color.b, 0x00);
+			int w, h;
+			SDL_GetRendererOutputSize(renderer, &w, &h);
+			Vec2 center((w / 2), (h / 2));
+			Vec2 displayableOrigin = m_origin + center;
 			for (int i = -(int)(m_radius.x); i < (int)(m_radius.x); ++i)
 			{
 				for (int j = -(int)(m_radius.y); j < (int)(m_radius.y); ++j)
 				{
 					if (j*j*m_radius.x*m_radius.x + i*i*m_radius.y*m_radius.y <= m_radius.x*m_radius.x*m_radius.y*m_radius.y)
 					{
-						SDL_RenderDrawPoint(renderer, (int) (m_origin.x + i), (int) (m_origin.y + j));
+						SDL_RenderDrawPoint(renderer, (int)(displayableOrigin.x + i), (int)(displayableOrigin.y + j));
 					}
 				}
 			}
@@ -643,40 +699,208 @@ namespace Patchwork
 
 	///////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	class Image
+	class Image : public Shape
 	{
 	public:
-		Image() : annotation(std::string()), components_(std::vector<Shape *>()){}
+		Image(Vec2 o = { 0, 0 }) : Shape(Shape::IMAGE, Color(0, 0, 0)), annotation(std::string()), components_(std::vector<Shape *>()), origin_(o){}
 		Image(const Image&) = delete;
 		Image& operator=(Image const&) = delete;
-		void add_component(Shape* s) 
-		{ 
-			//std::lock_guard<std::mutex> guard(mutex);
-			components_.push_back(s); 
+		
+		float area()
+		{			
+			BoundingBox bb = bounding_box();
+			std::lock_guard<std::mutex> guard(mutex);
+			int w = bb.x_max - bb.x_min;
+			int h = bb.y_max - bb.y_min;
+			return  (float)w*h;
 		}
-		void display(SDL_Renderer* renderer)
+
+		float perimeter()
 		{
-			//std::lock_guard<std::mutex> guard(mutex);
+			BoundingBox bb = bounding_box();
+			std::lock_guard<std::mutex> guard(mutex);
+			int w = bb.x_max - bb.x_min;
+			int h = bb.y_max - bb.y_min;
+			return 2.f*(w+h);
+		}
+
+		void translate(const Vec2& t)
+		{
+			std::lock_guard<std::mutex> guard(mutex);
 			for (auto component : components_)
 			{
-				component->display(renderer);
+				component->translate(t);
 			}
 		}
+
+		void homothety(float ratio)
+		{
+			std::lock_guard<std::mutex> guard(mutex);
+			for (auto component : components_)
+			{
+				component->homothety(ratio);
+			}
+		}
+
+		void homothety(const Vec2& s, float ratio)
+		{
+			std::lock_guard<std::mutex> guard(mutex);
+			for (auto component : components_)
+			{
+				component->homothety(s, ratio);
+			}
+		}
+
+		void rotate(float angle)
+		{
+			std::lock_guard<std::mutex> guard(mutex);
+			for (auto component : components_)
+			{
+				component->rotate(angle);
+			}
+		}
+
+		void rotate(const Vec2& p, double angle)
+		{
+			std::lock_guard<std::mutex> guard(mutex);
+			for (auto component : components_)
+			{
+				component->rotate(p, angle);
+			}
+		}
+		
+		void centralSym(const Vec2& c)
+		{
+			std::lock_guard<std::mutex> guard(mutex);
+			for (auto component : components_)
+			{
+				component->centralSym(c);
+			}
+		}
+
+		void axialSym(const Vec2& p, const Vec2& d)
+		{
+			std::lock_guard<std::mutex> guard(mutex);
+			for (auto component : components_)
+			{
+				component->axialSym(p, d);
+			}
+		}
+		
+		BoundingBox bounding_box()
+		{
+			std::lock_guard<std::mutex> guard(mutex);
+			BoundingBox bb_ = {};
+			BoundingBox bb = {};
+			for (auto component : components_)
+			{
+				bb = component->bounding_box();
+				if (bb_.x_max < bb.x_max)
+					bb_.x_max = bb.x_max;
+				if (bb_.x_min > bb.x_min)
+					bb_.x_min = bb.x_min;
+				if (bb_.y_max < bb.y_max)
+					bb_.y_max = bb.y_max;
+				if (bb_.y_min > bb.y_min)
+					bb_.y_min = bb.y_min;
+			}
+			return bb_;
+		}
+		
+		void add_component(Shape* s)
+		{ 
+			std::lock_guard<std::mutex> guard(mutex);
+			s->translate(origin_);
+			components_.push_back(s); 
+		}
+
+		Vec2 origin() const
+		{
+			return origin_;
+		}
+
+		void origin( Vec2& new_origin)
+		{
+			Vec2 v = (origin_ - new_origin);
+			translate(v);
+			origin_ = new_origin;
+		}
+
+		void display(SDL_Renderer* renderer, float ratio)
+		{
+			std::lock_guard<std::mutex> guard(mutex);
+			for (auto component : components_)
+			{
+				component->display(renderer, ratio);
+			}
+		}
+
+		void display(SDL_Renderer* renderer)
+		{
+			BoundingBox bb = bounding_box();
+			std::lock_guard<std::mutex> guard(mutex);
+
+			int w, h;
+			SDL_GetRendererOutputSize(renderer, &w, &h);
+			Vec2 center((w / 2), (h / 2));
+			bb.x_max = bb.x_max + center.x;
+			bb.x_min = bb.x_min + center.x;
+			bb.y_max = bb.y_max + center.y;
+			bb.y_min = bb.y_min + center.y;
+			Vec2 v1 = (center - Vec2( bb.x_max, bb.y_max ));
+			Vec2 v2 = (center - Vec2(bb.x_min, bb.y_min));
+			int im_w, im_h;
+			float n1 = norm(v1);
+			float n2 = norm(v2);
+			if (norm(v1) > norm(v2))
+			{
+				im_w = n1 * 2;
+				im_h = im_w;
+			}
+			else
+			{
+				im_w = n2 * 2;
+				im_h = im_w;
+			}
+
+			float w_ratio = (float) w / im_w;
+			float h_ratio = (float) h / im_h;
+			float final_ratio = 1.f;
+
+			if (w_ratio < 1.f || h_ratio < 1.f)
+			{
+				if (w_ratio <= h_ratio)
+				{
+					final_ratio = w_ratio;
+				}
+				else
+				{
+					final_ratio = h_ratio;
+				}
+			}
+
+			for (auto component : components_)
+			{
+
+				component->display(renderer, final_ratio);
+			}
+		}
+
 		std::string get_annotation()
 		{
-			//std::lock_guard<std::mutex> guard(mutex);
+			std::lock_guard<std::mutex> guard(mutex);
 			return annotation;
 		}
 
 		void annotate(std::string msg)
 		{
-			//std::lock_guard<std::mutex> guard(mutex);
+			std::lock_guard<std::mutex> guard(mutex);
 			annotation = msg;
 		}
 
 		void serialize(std::string& serial)
 		{
-			//std::lock_guard<std::mutex> guard(mutex);
+			std::lock_guard<std::mutex> guard(mutex);
 			int max_x = 0, max_y = 0;
 			for (auto component : components_)
 			{
@@ -691,6 +915,10 @@ namespace Patchwork
 			std::istringstream buf(s);
 			for (std::string word; buf >> word;)
 			{
+				switch (Shape::ShapeStringToEnum(word))
+				{
+
+				}
 				if (word == "circle")
 				{
 					buf >> word;
@@ -780,9 +1008,9 @@ namespace Patchwork
 			}
 		}
 
-		std::vector< Shape* > components()
+		std::vector< Shape* >& components()
 		{
-			//std::lock_guard<std::mutex> guard(mutex);
+			std::lock_guard<std::mutex> guard(mutex);
 			return components_;
 		}
 
@@ -790,6 +1018,7 @@ namespace Patchwork
 		std::vector< Shape* > components_;
 		std::string annotation;
 		std::mutex mutex;
+		Vec2 origin_;
 	};
 
 
