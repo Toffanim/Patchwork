@@ -17,7 +17,9 @@
 #include <thread>
 #include <utility>
 #include <stdio.h>
+#if _WIN32_
 #include <tchar.h>
+#endif
 #include <boost/asio.hpp>
 #include "chat_message.hpp"
 #include "Shape.h"
@@ -284,7 +286,7 @@ private:
 class Server
 {
 public:
-	const enum Commands { DISPLAY = 0, SEND, GET, PRINT, ANNOTATE, STATS, PATCHWORK, UNKNOWN };
+	enum Commands { DISPLAY = 0, SEND, GET, PRINT, ANNOTATE, STATS, PATCHWORK, UNKNOWN };
 	static const std::vector<std::string> cmds;
 
 	static void print_commands()
@@ -444,8 +446,8 @@ private:
 
 				case Commands::STATS:
 				{
-					//NOTE(marc) : D'après le standard, les types primitifs d'une map sont 
-					// zero-initialisé, ont as pas besoin de la faire nous même
+					//NOTE(marc) : D'apr\E8s le standard, les types primitifs d'une map sont 
+					// zero-initialis\E9, ont as pas besoin de la faire nous m\EAme
 					std::map< Shape::Derivedtype, int > shapes_count;
 					std::map< Color, int > color_count;
 					for (auto participant : s->room().participants())
@@ -520,7 +522,12 @@ private:
 };
 const std::vector<std::string> Server::cmds = { "display", "send", "get", "print", "annotate", "stats", "patchwork" };
 
+
+#if _WIN32_
 int _tmain(int argc, _TCHAR* argv[])
+#else
+int main()
+#endif
 {
   try
   {

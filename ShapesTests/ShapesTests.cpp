@@ -1,12 +1,17 @@
 // ShapesTests.cpp : Defines the entry point for the console application.
 //
-
+#if _WIN32_
 #include "stdafx.h"
+#endif
 #include "Shape_test.h"
-#include "SDL2\SDL.h"
+#include "SDL2/SDL.h"
 
 using namespace Patchwork;
+#if _WIN32_
 int _tmain(int argc, _TCHAR* argv[])
+#else
+int main()
+#endif
 {
 	
 	Shape_test::run_tests();

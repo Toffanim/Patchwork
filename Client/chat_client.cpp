@@ -14,7 +14,9 @@
 #include <thread>
 #include <boost/asio.hpp>
 #include <stdio.h>
+#if _WIN32_
 #include <tchar.h>
+#endif
 #include "chat_message.hpp"
 #include "Shape.h"
 
@@ -152,7 +154,7 @@ private:
 class Client
 {
 public :
-	const enum Commands { DISPLAY = 0, MAKE, TRANSFORM, PRINT, SEND, DELETE_, HELP, UNKNOWN };
+	enum Commands { DISPLAY = 0, MAKE, TRANSFORM, PRINT, SEND, DELETE_, HELP, UNKNOWN };
 	static const std::vector<std::string> cmds;
 
 	static void print_commands()
@@ -489,7 +491,11 @@ private:
 };
 const std::vector<std::string> Client::cmds = { "display", "make", "transform", "print", "send", "delete" , "help"};
 
+#if _WIN32_
 int _tmain(int argc, _TCHAR* argv[])
+#else
+int main()
+#endif
 {
   boost::asio::io_service io_service;
   Client c("127.0.0.1", "8080", io_service);

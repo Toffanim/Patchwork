@@ -3,6 +3,7 @@
 #define PI 3.1415926535897932384626433832795
 #define DEGTORAD (2*PI)/ (double)360
 
+#if _WIN32_
 // Fast sqrt using assembly fsqrt
 // different method discussed here : http://www.codeproject.com/Articles/69941/Best-Square-Root-Method-Algorithm-Function-Precisi
 double inline __declspec (naked) __fastcall fast_sqrt(double n)
@@ -29,7 +30,23 @@ double inline __declspec (naked) __fastcall fast_cos(double n)
 		_asm fcos
 	_asm ret 8
 }
+#else
+#include <cmath>
+double inline fast_sqrt(double n)
+{
+	return std::sqrt(n);
+}
 
+double inline fast_sin(double n)
+{
+	return std::sin(n);
+}
+
+double inline fast_cos(double n)
+{
+	return std::cos(n);
+}
+#endif
 
 struct Vec2
 {
