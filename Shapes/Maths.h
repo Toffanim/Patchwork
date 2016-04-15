@@ -3,6 +3,14 @@
 #define PI 3.1415926535897932384626433832795
 #define DEGTORAD (2*PI)/ (double)360
 
+/*! \file Shape.h
+\brief Header files containing all things related to mathematics (low level).
+
+Provides trogonometric functions : fast_sin, fast_cos, fast_sqrt
+Provides a 2D vector classe (also used for containing points), and vector algebra.
+Provides a Color container.
+*/
+
 #if _WIN32_
 // Fast sqrt using assembly fsqrt
 // different method discussed here : http://www.codeproject.com/Articles/69941/Best-Square-Root-Method-Algorithm-Function-Precisi
@@ -48,13 +56,16 @@ double inline fast_cos(double n)
 }
 #endif
 
+/*!
+Structure to contain floating point 2D vector (or point), initialized at 0
+*/
 struct Vec2
 {
 	Vec2(float x, float y) : x(x), y(y) {}
 	Vec2() : x(0.f), y(0.f) {}
 		
-	float x;
-	float y;
+	float x; /*!< x coordinate */
+	float y; /*!< y coordinate */
 
 	friend std::ostream& operator << (std::ostream& out, const Vec2& v);
 };
@@ -69,6 +80,10 @@ bool operator== (const Vec2& a, Vec2& b) { if (a.x == b.x && a.y == b.y) return 
 //Vec2 operator^ (const Vec2& a, const Vec2& b) { return ( ) }
 std::ostream& operator << (std::ostream& out,const Vec2& v){ out << "(" << v.x << " , " << v.y << ")"; return out; }
 
+/*!
+Structure to contain RGB color value ( 3 ints )
+This structure does not check if values are whithin [0,255] as SDL can take value > 255 well
+*/
 struct Color
 {
 	Color() :r(0), g(0), b(0) {}
@@ -90,12 +105,18 @@ std::ostream& operator << (std::ostream& out, const Color& c)
 	return out;
 }
 
-float dot(Vec2 a, Vec2 b)
+/*!
+Dot product between two vectors
+*/
+float dot(Vec2& a, Vec2& b)
 {
 	return(a.x * b.x + a.y * b.y);
 }
 
-float norm(Vec2 a)
+/*!
+Euclidean norm of a vector
+*/
+float norm(Vec2& a)
 {
 	return (fast_sqrt((a.x * a.x) + (a.y * a.y)));
 }

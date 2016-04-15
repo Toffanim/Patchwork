@@ -26,6 +26,12 @@ public:
   {
   }
 
+  ~chat_message()
+  {
+	  if (data_)
+		  delete data_;
+  }
+
   const char* data() const
   {
     return data_;

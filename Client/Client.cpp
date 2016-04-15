@@ -14,7 +14,7 @@
 #include <thread>
 #include <boost/asio.hpp>
 #include <stdio.h>
-#if _WIN32_
+#if _WIN32
 #include <tchar.h>
 #endif
 #include "chat_message.hpp"
@@ -25,9 +25,24 @@ using namespace Patchwork;
 
 typedef std::deque<chat_message> chat_message_queue;
 
+/*! \file Client.cpp
+\brief File containing the client part of the application
+
+*/
+
+/*!
+Class that handle the input and output of the client (basically reading and writing to the socket)
+*/
 class ClientIO
 {
 public:
+	/*!
+	Class that handle the input and output of the client (basically reading and writing to the socket).
+	This class is based an asynchronous IO pattern (c.f boost::asio).
+	\param io_service The boost::asio io_service providing event polling on the socket
+	\param endpoint_iterator The boost::asio TCP iterator
+	\param img Reference to the image currently owned by the Client (so we can send it)
+	*/
   ClientIO(boost::asio::io_service& io_service,
       tcp::resolver::iterator endpoint_iterator,
 	  Image& img)
@@ -35,9 +50,13 @@ public:
       socket_(io_service),
 	  img(img)
   {
+	  //Check for connection
     do_connect(endpoint_iterator);
   }
-
+  /*!
+  Tells the socket that we want to write a message
+  /param msg the message to send
+  */
   void write(const chat_message& msg)
   {
     io_service_.post(
@@ -51,13 +70,19 @@ public:
           }
         });
   }
-
+  /*!
+  Tells the socket that we want to close the connection
+  */
   void close()
   {
     io_service_.post([this]() { socket_.close(); });
   }
 
 private:
+	/*!
+	Resolve the external connection to the socket
+	When a connection is find, the handler will start reading the message
+	*/
   void do_connect(tcp::resolver::iterator endpoint_iterator)
   {
     boost::asio::async_connect(socket_, endpoint_iterator,
@@ -69,7 +94,9 @@ private:
           }
         });
   }
-
+  /*!
+  Read from the socket into a buffer and analyze our message header, then ask to read the message's body
+  */
   void do_read_header()
   {
     boost::asio::async_read(socket_,
@@ -86,7 +113,9 @@ private:
           }
         });
   }
-
+  /*!
+  Read from the socket into a buffer and analyze our message body, then start again to read from the socket is some reads are needed to be done (due to asynchronous design)
+  */
   void do_read_body()
   {
     boost::asio::async_read(socket_,
@@ -119,7 +148,9 @@ private:
           }
         });
   }
-
+  /*!
+  Write to the socket, then ask to write again if some writes are needed to be done (due to asychronous design)
+  */
   void do_write()
   {
     boost::asio::async_write(socket_,
@@ -143,26 +174,33 @@ private:
   }
 
 private:
-  boost::asio::io_service& io_service_;
-  tcp::socket socket_;
-  chat_message read_msg_;
-  chat_message_queue write_msgs_;
-  Image& img;
+  boost::asio::io_service& io_service_; /*!< boost::asio IO service */
+  tcp::socket socket_; /*!< boost::asio TCP Socket */
+  chat_message read_msg_; /*!< Message read from the socket */
+  chat_message_queue write_msgs_; /*!< Queue of messages to be sent */
+  Image& img; /*!< REference to the image currently owned by the Client */
 };
 
-
+/*!
+Class that handle the Client's input commands, basically polling commands from the console
+*/
 class Client
 {
 public :
-	enum Commands { DISPLAY = 0, MAKE, TRANSFORM, PRINT, SEND, DELETE_, HELP, UNKNOWN };
-	static const std::vector<std::string> cmds;
-
+	enum Commands { DISPLAY = 0, MAKE, TRANSFORM, PRINT, SEND, DELETE_, HELP, UNKNOWN }; /*!< Enums of available commands */
+	static const std::vector<std::string> cmds; /*!< A static container of strings defining the command string assiciaited to its Commands enum value  */
+	/*!
+	Static function to print available commands keywords
+	*/
 	static void print_commands()
 	{
 		for (auto cmd : cmds)
 			std::cout << " " << cmd;
 	}
-
+	/*!
+	Function to convert a string into a Command enum.
+	Return UNKNOWN if not in the container.
+	*/
 	Commands CmdStringToEnum(std::string s)
 	{
 		for (int i = 0; i < cmds.size(); ++i)
@@ -174,10 +212,16 @@ public :
 		}
 		return Commands::UNKNOWN;
 	}	
-
+	/*!
+	Class that creates the ClientIO and poll user input to execute commands
+	/param ip TCP Socket IP
+	/param port TCP Socket port
+	/param service boost::asio io_service
+	*/
 	Client(std::string ip, std::string port, boost::asio::io_service& service) : io_service(service)
 	{
 		img = new Image();
+		//Initiliaze connection
 		resolver = new tcp::resolver(io_service);
 		auto endpoint_iterator = resolver->resolve({ "127.0.0.1", "8080" });
 		c = new ClientIO(io_service, endpoint_iterator, *img);
@@ -186,7 +230,20 @@ public :
 		start_polling();
 	};
 
+	~Client()
+	{
+		delete img;
+		delete resolver;
+		delete c;
+		t->join();
+		delete t;
+		SDL_Quit();
+	}
+
 private:
+	/*!
+	Function thats polls user inputs and call the associated functions
+	*/
 	void start_polling()
 	{
 		const unsigned int LINE_MAX_SIZE = 256;
@@ -194,10 +251,12 @@ private:
 		char line[LINE_MAX_SIZE];
 		std::string cmd;
 		//    While the users is entering commands we react to it
+		print_commands();
+		std::cout << std::endl << "Command : ";
 		while (std::cin.getline(line, LINE_MAX_SIZE))
 		{
 			cmd = std::string(line);
-
+			// Convert string to a command enum we can switch on
 			switch (CmdStringToEnum(cmd))
 			{
 				case Commands::DISPLAY:
@@ -221,16 +280,20 @@ private:
 
 				case Commands::HELP:
 				{
+					//Print available commands
 					std::cout << "available commands : ";
 					print_commands();
 				}break;
 
 				case Commands::MAKE:
 				{
+					//Print available shapes
 					std::cout << "Available shapes : ";
 					Shape::print_shapes();
+					std::cout << std::endl;
 					std::cout << "Enter Shape Type : ";
 					std::cin >> cmd;
+					//Switch on user entered shapes
 					switch (Shape::ShapeStringToEnum(cmd))
 					{
 						case Shape::Derivedtype::CIRCLE:
@@ -251,12 +314,18 @@ private:
 								std::cin >> g;
 								std::cout << "Color B : ";
 								std::cin >> b;
+								if (std::cin.fail())
+								{
+									std::cin.clear();
+									throw std::domain_error("Bad input");
+								}
 								img->add_component(new Circle(Vec2(x, y), radius, Color(r, g, b)));
+								std::cout << "Circle created" << std::endl;
 							}
 							catch (std::exception& e)
 							{
 								//Catch error of types when cin trying to convert to desired type
-								std::cout << " Problem : " << e.what() << std::endl;
+								std::cout << std::endl << " Problem : " << e.what() << std::endl;
 							}				
 						}break;
 
@@ -280,7 +349,13 @@ private:
 								std::cin >> g;
 								std::cout << "Color B : ";
 								std::cin >> b;
+								if (std::cin.fail())
+								{
+									std::cin.clear();
+									throw std::domain_error("Bad input");
+								}
 								img->add_component(new Patchwork::Ellipse(Vec2(x, y), Vec2(rad_x, rad_y), Color(r, g, b)));
+								std::cout << "Ellipse created" << std::endl;
 							}
 							catch (std::exception& e)
 							{
@@ -309,7 +384,13 @@ private:
 								std::cin >> g;
 								std::cout << "Color B : ";
 								std::cin >> b;
+								if (std::cin.fail())
+								{
+									std::cin.clear();
+									throw std::domain_error("Bad input");
+								}
 								img->add_component(new Patchwork::Line(Vec2(x, y), Vec2(dir_x, dir_y), Color(r, g, b)));
+								std::cout << "Line created" << std::endl;
 							}
 							catch (std::exception& e)
 							{
@@ -343,7 +424,13 @@ private:
 								std::cin >> g;
 								std::cout << "Color B : ";
 								std::cin >> b;
+								if (std::cin.fail())
+								{
+									std::cin.clear();
+									throw std::domain_error("Bad input");
+								}
 								img->add_component(new Patchwork::Polygon(points, Color(r, g, b)));
+								std::cout << "Polygon created" << std::endl;
 							}
 							catch (std::exception& e)
 							{
@@ -354,13 +441,14 @@ private:
 
 						default:
 						{
-							std::cout << "Unknown command" << std::endl;
+							std::cout << "Unknown shape" << std::endl;
 						}break;
 					}
 				}break;
 
 				case Commands::SEND:
 				{
+					// Send the image to the server
 					chat_message msg;
 					std::string serial;
 					img->serialize(serial);
@@ -374,63 +462,139 @@ private:
 				{
 					int id;
 					std::string buf;
-					print_components();
-					std::cout << "Choose a shape ID : ";
-					std::cin >> id;
+					try
+					{
+						//Transform an existing shape	
+						print_components();
+						std::cout << std::endl;
+						std::cout << "Choose a shape ID : ";
+						std::cin >> id;
+						if (std::cin.fail())
+						{
+							std::cin.clear();
+							throw std::domain_error("Bad input");
+						}
+					}
+					catch (std::exception& e)
+					{
+						std::cout << std::endl << "Problem : " << e.what() << std::endl;
+						break;
+					}
 					std::cout << "Available transforms : ";
 					Shape::print_transforms();
+					std::cout << std::endl;
 					std::cout << "Choose a transformation : ";
 					std::cin >> buf;
 					switch (Shape::FuncStringToEnum(buf))
 					{
 						case Shape::HOMOTHETY:
 						{
-							float ratio;
-							std::cout << "Ratio : " << std::endl;
-							std::cin >> ratio;
-							img->components().at(id)->homothety(ratio);
+							try
+							{
+								float ratio;
+								std::cout << "Ratio : ";
+								std::cin >> ratio;
+								if (std::cin.fail())
+								{
+									std::cin.clear();
+									throw std::domain_error("Bad input");
+								}
+								img->components().at(id)->homothety(ratio);
+							}
+							catch (std::exception& e)
+							{
+								std::cout << std::endl << "Problem : " << e.what() << std::endl;
+							}
 						}break;
 
 						case Shape::AXIAL_SYMETRY:
 						{
-							float x, y, dir_x, dir_y;
-							std::cout << "Axe point X : " << std::endl;
-							std::cin >> x;
-							std::cout << "Axe point Y : " << std::endl;
-							std::cin >> y;
-							std::cout << "Axe direction X : " << std::endl;
-							std::cin >> dir_x;
-							std::cout << "Axe direction Y : " << std::endl;
-							std::cin >> dir_y;
-							img->components().at(id)->axialSym(Vec2(x, y), Vec2(dir_x, dir_y));
+							try
+							{
+								float x, y, dir_x, dir_y;
+								std::cout << "Axe point X : ";
+								std::cin >> x;
+								std::cout << "Axe point Y : ";
+								std::cin >> y;
+								std::cout << "Axe direction X : ";
+								std::cin >> dir_x;
+								std::cout << "Axe direction Y : ";
+								std::cin >> dir_y;
+								if (std::cin.fail())
+								{
+									std::cin.clear();
+									throw std::domain_error("Bad input");
+								}
+								img->components().at(id)->axialSym(Vec2(x, y), Vec2(dir_x, dir_y));
+							}
+							catch (std::exception& e)
+							{
+								std::cout << std::endl << "Problem : " << e.what() << std::endl;
+							}
 						}break;
 
 						case Shape::CENTRAL_SYMETRY:
 						{
-							float x, y;
-							std::cout << "Center X : " << std::endl;
-							std::cin >> x;
-							std::cout << "Center Y : " << std::endl;
-							std::cin >> y;
-							img->components().at(id)->centralSym(Vec2(x, y));
+							try
+							{
+								float x, y;
+								std::cout << "Center X : ";
+								std::cin >> x;
+								std::cout << "Center Y : ";
+								std::cin >> y;
+								if (std::cin.fail())
+								{
+									std::cin.clear();
+									throw std::domain_error("Bad input");
+								}
+								img->components().at(id)->centralSym(Vec2(x, y));
+							}
+							catch (std::exception& e)
+							{
+								std::cout << std::endl << "Problem : " << e.what() << std::endl;
+							}
 						}break;
 
 						case Shape::ROTATION:
 						{
-							float angle;
-							std::cout << "Angle : " << std::endl;
-							std::cin >> angle;
-							img->components().at(id)->rotate(angle);
+							try
+							{
+								float angle;
+								std::cout << "Angle (Degree) : ";
+								std::cin >> angle;
+								if (std::cin.fail())
+								{
+									std::cin.clear();
+									throw std::domain_error("Bad input");
+								}
+								img->components().at(id)->rotate(DEGTORAD*angle);
+							}
+							catch (std::exception& e)
+							{
+								std::cout << std::endl << "Problem : " << e.what() << std::endl;
+							}
 						}break;
 
 						case Shape::TRANSLATE:
 						{
-							float x, y;
-							std::cout << "Translation X : " << std::endl;
-							std::cin >> x;
-							std::cout << "Translation Y : " << std::endl;
-							std::cin >> y;
-							img->components().at(id)->translate(Vec2(x, y));
+							try
+							{
+								float x, y;
+								std::cout << "Translation X : ";
+								std::cin >> x;
+								std::cout << "Translation Y : ";
+								std::cin >> y;
+								if (std::cin.fail())
+								{
+									std::cin.clear();
+									throw std::domain_error("Bad input");
+								}
+								img->components().at(id)->translate(Vec2(x, y));
+							}
+							catch (std::exception& e)
+							{
+								std::cout << std::endl << "Problem : " << e.what() << std::endl;
+							}
 						}break;
 
 						default:
@@ -442,18 +606,27 @@ private:
 
 				case Commands::PRINT:
 				{
+					// Print componentns of the image
 					print_components();
 				}break;
 
 				case Commands::DELETE_:
 				{
+					//Delete one component
 					try
 					{
 						int id;
 						print_components();
-						std::cout << "Enter ID : " << std::endl;
+						std::cout << std::endl;
+						std::cout << "Enter ID : " ;
 						std::cin >> id;
-						auto it = img->components().begin();
+						if (std::cin.fail())
+						{
+							std::cin.clear();
+							throw std::domain_error("Bad input");
+						}
+						auto tmp = img->components().at( id ); // test to throw exception
+						auto it = img->components().begin() + id;
 						img->components().erase(it);
 					}
 					catch (std::exception& e)
@@ -464,40 +637,55 @@ private:
 
 				default:
 				{
-					std::cout << "Unknow command" << std::endl;
+					if (!cmd.empty())
+					    std::cout << "Unknown command" << std::endl;
 				}
 			}
+			std::cin.clear();
+			std::cin.ignore(100000, '\n');
+			std::cout << std::endl << "Command : ";
 		}
 		c->close();
 		t->join();
 	}
-
+	/*!
+	Print out the image componentns
+	*/
 	void print_components()
 	{
-		for (int i = 0; i < img->components().size(); i++)
+		if (img->components().size())
 		{
-			std::cout << i << " " << *img->components().at(i);
+			for (int i = 0; i < img->components().size(); i++)
+			{
+				std::cout << i << " " << *img->components().at(i);
+			}
+		}
+		else
+		{
+			std::cout << "No components" << std::endl;
 		}
 	}
 
-	ClientIO* c;
-	SDL_Event event;
-	SDL_Window *window;
-	SDL_Renderer *renderer;
-	boost::asio::io_service& io_service;
-	tcp::resolver* resolver;
-	std::thread* t;
-	Image* img;
+	ClientIO* c; /*!< The Client Input/Output on socket */
+	SDL_Event event; /*!< SDL Event so we can know when to close the window */
+	SDL_Window *window; /*!< SDL window to display to */
+	SDL_Renderer *renderer; /*!< SDL renderer to draw components to */
+	boost::asio::io_service& io_service; /*!< boost::asio io_service */
+	tcp::resolver* resolver; /*!< boost::asio TCP resolver */
+	std::thread* t; /*!< Thread polling Input/Output event from io_service */
+	Image* img; /*!< Image being created by the client */
 };
 const std::vector<std::string> Client::cmds = { "display", "make", "transform", "print", "send", "delete" , "help"};
 
-#if _WIN32_
+#if _WIN32
 int _tmain(int argc, _TCHAR* argv[])
 #else
 int main()
 #endif
 {
+	//Create io_service and start Client
   boost::asio::io_service io_service;
+  //Client will be cleaned by app
   Client c("127.0.0.1", "8080", io_service);
   return 0;
 }

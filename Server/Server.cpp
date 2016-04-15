@@ -17,7 +17,7 @@
 #include <thread>
 #include <utility>
 #include <stdio.h>
-#if _WIN32_
+#if _WIN32
 #include <tchar.h>
 #endif
 #include <boost/asio.hpp>
@@ -523,7 +523,7 @@ private:
 const std::vector<std::string> Server::cmds = { "display", "send", "get", "print", "annotate", "stats", "patchwork" };
 
 
-#if _WIN32_
+#if _WIN32
 int _tmain(int argc, _TCHAR* argv[])
 #else
 int main()

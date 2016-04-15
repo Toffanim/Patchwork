@@ -2,6 +2,9 @@
 #include <iostream>
 #include <cstdlib>
 
+/*!
+Fonction that checks if the condition cond holds true, print out OK or KO and exit program if critical boolean is passed
+*/
 int test_assert(bool cond, char* msg, bool critical = false)
 {
 	if (cond)
