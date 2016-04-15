@@ -10,7 +10,10 @@
 #include "SDL2\SDL.h"
 
 /*! \file Shape.h
-\brief A Documented file.
+\brief Header files containing all things related to geometric shapes.
+
+Gives access to the classes : Circle, Polygon, Line and Ellipse, which all inherits from the Shape class.
+Also provides the Image class which is a container of shapes.
 
 Details.
 */
@@ -19,7 +22,7 @@ namespace Patchwork
 {
 	/*! 
 	Function to transform a floating point number into a std::string
-	The float will have 2 decimals precision
+	This function is needed because we wants only two decimals printed from the float.
 	*/
 	std::string to_string(float f)
 	{
@@ -30,6 +33,7 @@ namespace Patchwork
 
 	/*!
 	Function to transform a integer into a std::string
+	This function is not particularly needed since std::to_string(int) exists.
 	*/
 	std::string to_string(int i)
 	{
@@ -40,7 +44,9 @@ namespace Patchwork
 
 	/*!
 	A structure for a bounding box object defined by two points :
-	upper left and lower right corners
+	upper left and lower right corners.
+	The structure is initialized with minimal value for maximums and maximal value for minimums (integer 10000), so it can be used
+	right away to compute min and max.
 	*/
 	struct BoundingBox
 	{
@@ -63,33 +69,41 @@ namespace Patchwork
 		virtual void centralSym(const Vec2& c) = 0;
 		virtual void axialSym(const Vec2& p, const Vec2& d) = 0;
 	};
+
 	///////////////////////////////////////////////////////////////////////////////////////////////////////////
+	
+	/*!
+	An abstract class which define a 2D Shape.
+	All function supposed the space to be two dimensional.
+	*/
 	class Shape
 	{
 	public:
-		enum Derivedtype { CIRCLE=0, POLYGON, LINE, ELLIPSE, IMAGE, END_ENUM };
-		enum Functions { ROTATION = 0, HOMOTHETY, TRANSLATE, AXIAL_SYMETRY, CENTRAL_SYMETRY, UNKNOWN };
-		static const std::vector<std::string> transforms;
-		static const std::vector<std::string> shapes;
+		enum Derivedtype { CIRCLE=0, POLYGON, LINE, ELLIPSE, IMAGE, END_ENUM }; /*!< Enum of available derived types */
+		enum Functions { ROTATION = 0, HOMOTHETY, TRANSLATE, AXIAL_SYMETRY, CENTRAL_SYMETRY, UNKNOWN }; /*!< Enum of available transforamtions */
+		static const std::vector<std::string> transforms; /*!< A static container of strings defining the transformation string assiciaited to its Functions enum value  */
+		static const std::vector<std::string> shapes;  /*!< A static container of strings defining the shape string assiciated to its Derivedtype enum value  */
 
+		/*!
+		Static function to print available transfromation keywords
+		*/
 		static void print_transforms()
 		{
 			for (auto transform : transforms)
 				std::cout << " " << transform;
 		}
-
+		/*!
+		Static function to print available shapes keywords
+		*/
 		static void print_shapes()
 		{
 			for (auto shape : shapes)
 				std::cout << " " << shape;
 		}
-
-		Shape(Derivedtype type, Color color) : m_type(type), m_color(color){};
-		~Shape(){};
-
-		Derivedtype type() const { return(m_type); }
-		const Color color() const { return(m_color); }
-
+		/*!
+		Static function to convert a string into a Derivedtype enum.
+		Return END_ENUM if not in the container
+		*/
 		static Derivedtype ShapeStringToEnum(std::string s)
 		{
 			for (int i = 0; i < shapes.size(); ++i)
@@ -101,7 +115,10 @@ namespace Patchwork
 			}
 			return Derivedtype::END_ENUM;
 		}
-
+		/*!
+		Static function to convert a string into a Functions enum.
+		Return UNKNOWN if not in the container.
+		*/
 		static Functions FuncStringToEnum(std::string s)
 		{
 			for (int i = 0; i < transforms.size(); ++i)
@@ -113,15 +130,56 @@ namespace Patchwork
 			}
 			return Functions::UNKNOWN;
 		}
-
+		/*!
+		Constructor initializing the Derivedtype and color
+		*/
+		Shape(Derivedtype type, Color color) : m_type(type), m_color(color){};
+		~Shape(){};
+		/*!
+		Getter for the variable type
+		*/
+		Derivedtype type() const { return(m_type); }
+		/*!
+		Getter for the variable color
+		*/
+		const Color color() const { return(m_color); }
+		/*!
+		Interface function, needed in inheriting classes, to compute the area of the shape.
+		*/
 		virtual float area() = 0;
+		/*!
+		Interface function, needed in inheriting classes, to compute the perimeter of the shape.
+		*/
 		virtual float perimeter() = 0;
-		virtual void translate(const Vec2& t) = 0;
+		/*!
+		Interface function, needed in inheriting classes, to compute the translation of the shape by a vector v
+		*/
+		virtual void translate(const Vec2& v) = 0;
+		/*!
+		Interface function, needed in inheriting classes, to compute the homothety of the shape by a ratio.
+		The ratio is supposed to be a float which value is comprised between [0, +infinity]. The origin of the homothety is the center of the shape' bounding box.
+		*/
 		virtual void homothety(float ratio) = 0;
-		virtual void homothety(const Vec2& s, float ratio) = 0;
+		/*!
+		Interface function, needed in inheriting classes, to compute the homothety of the shape by a ratio and an origin o.
+		The ratio is supposed to be a float which value is comprised between [0, +infinity]. The origin of the homothety is the point o.
+		*/
+		virtual void homothety(const Vec2& o, float ratio) = 0;
+		/*!
+		Interface function, needed in inheriting classes, to compute the rotation of the shape by an angle in radiant.
+		The origin of the rotation is the center of the shape' bounding box.
+		*/
 		virtual void rotate(float angle) = 0;
-		virtual void rotate(const Vec2& p, double angle) = 0;
-		virtual void centralSym(const Vec2& c) = 0;
+		/*!
+		Interface function, needed in inheriting classes, to compute the rotation of the shape by an angle in radiant and an origin o.
+		The origin of the rotation is the point o.
+		*/
+		virtual void rotate(const Vec2& o, double angle) = 0;
+		/*!
+		Interface function, needed in inheriting classes, to compute the central symetry of the shape with origin o.
+		The origin of the symetry is the point o.
+		*/
+		virtual void centralSym(const Vec2& o) = 0;
 		virtual void axialSym(const Vec2& p, const Vec2& d) = 0;
 		virtual void display(SDL_Renderer* renderer, float ratio) = 0;
 		virtual void serialize( std::string& serial ) = 0;
