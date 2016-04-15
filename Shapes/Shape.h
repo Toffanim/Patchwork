@@ -7,7 +7,7 @@
 #include <mutex>
 #include <algorithm>
 #include "Maths.h"
-#include "SDL2\SDL.h"
+#include "SDL2/SDL.h"
 
 /*! \file Shape.h
 \brief A Documented file.
@@ -819,7 +819,7 @@ namespace Patchwork
 			return origin_;
 		}
 
-		void origin( Vec2& new_origin)
+		void origin( Vec2 new_origin)
 		{
 			Vec2 v = (origin_ - new_origin);
 			translate(v);
