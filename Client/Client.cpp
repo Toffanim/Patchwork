@@ -235,8 +235,8 @@ public :
 		delete img;
 		delete resolver;
 		delete c;
-		t->join();
-		SDL_Quit();
+		if (t->joinable())
+		    t->join();
 	}
 
 private:
