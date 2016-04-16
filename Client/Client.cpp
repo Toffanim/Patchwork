@@ -187,7 +187,7 @@ Class that handle the Client's input commands, basically polling commands from t
 class Client
 {
 public :
-	enum Commands { DISPLAY = 0, MAKE, TRANSFORM, PRINT, SEND, DELETE_, HELP, UNKNOWN }; /*!< Enums of available commands */
+	enum Commands { DISPLAY = 0, MAKE, TRANSFORM, PRINT, SEND, DELETE_, HELP, QUIT, UNKNOWN }; /*!< Enums of available commands */
 	static const std::vector<std::string> cmds; /*!< A static container of strings defining the command string assiciaited to its Commands enum value  */
 	/*!
 	Static function to print available commands keywords
@@ -225,7 +225,7 @@ public :
 		resolver = new tcp::resolver(io_service);
 		auto endpoint_iterator = resolver->resolve({ "127.0.0.1", "8080" });
 		c = new ClientIO(io_service, endpoint_iterator, *img);
-		std::thread* t = new std::thread([&](){ io_service.run(); });
+		t = new std::thread([&](){ io_service.run(); });
 		SDL_Init(SDL_INIT_VIDEO);
 		start_polling();
 	};
@@ -236,7 +236,6 @@ public :
 		delete resolver;
 		delete c;
 		t->join();
-		delete t;
 		SDL_Quit();
 	}
 
@@ -246,6 +245,7 @@ private:
 	*/
 	void start_polling()
 	{
+		bool quit = false;
 		const unsigned int LINE_MAX_SIZE = 256;
 		// Start polling for commands
 		char line[LINE_MAX_SIZE];
@@ -260,6 +260,11 @@ private:
 			// Convert string to a command enum we can switch on
 			switch (CmdStringToEnum(cmd))
 			{
+				case Commands::QUIT:
+				{
+					quit = true;
+				}break;
+
 				case Commands::DISPLAY:
 				{
 					//Print annotation in console
@@ -642,11 +647,16 @@ private:
 					    std::cout << "Unknown command" << std::endl;
 				}
 			}
+
+			if (quit)
+				break;
+
 			std::cin.clear();
 			std::cin.ignore(100000, '\n');
 			std::cout << std::endl << "Command : ";
 		}
 		c->close();
+		io_service.stop();
 		t->join();
 	}
 	/*!
@@ -676,7 +686,7 @@ private:
 	std::thread* t; /*!< Thread polling Input/Output event from io_service */
 	Image* img; /*!< Image being created by the client */
 };
-const std::vector<std::string> Client::cmds = { "display", "make", "transform", "print", "send", "delete" , "help"};
+const std::vector<std::string> Client::cmds = { "display", "make", "transform", "print", "send", "delete" , "help", "quit"};
 
 #if _WIN32
 int _tmain(int argc, _TCHAR* argv[])

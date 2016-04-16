@@ -96,7 +96,7 @@ bool operator== (const Color& a, const Color& b) { return (a.r == b.r && a.g == 
 //bool operator== (Color& a, Color& b) { if (a.r == b.r && a.g == b.g && a.b == b.b) return true; return false; }
 bool operator< (const Color a, const Color b) { 
 	int l1 = (a.r * 256 + a.g) * 256 + a.b;
-	int l2 = (a.r * 256 + a.g) * 256 + a.b;
+	int l2 = (b.r * 256 + b.g) * 256 + b.b;
 	return (l1 < l2) ;
 }  // needed for use in map
 std::ostream& operator << (std::ostream& out, const Color& c)

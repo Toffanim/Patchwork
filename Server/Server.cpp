@@ -341,7 +341,7 @@ Class that handle the Server's input commands, basically polling commands from t
 class Server
 {
 public:
-	enum Commands { DISPLAY = 0, SEND, GET, PRINT, ANNOTATE, STATS, PATCHWORK, HELP, UNKNOWN }; /*!< Enums of available commands */
+	enum Commands { DISPLAY = 0, SEND, GET, PRINT, ANNOTATE, STATS, PATCHWORK, HELP, QUIT, UNKNOWN }; /*!< Enums of available commands */
 	static const std::vector<std::string> cmds; /*!< A static container of strings defining the command string assiciaited to its Commands enum value  */
 	/*!
 	Static function to print available commands keywords
@@ -375,7 +375,7 @@ public:
 		//Init socket
 		tcp::endpoint endpoint(tcp::v4(), 8080);
 		s = new ServerIO(io_service, std::move(endpoint));
-		std::thread* t = new std::thread([&](){ io_service.run(); });
+		t = new std::thread([&](){ io_service.run(); });
 		SDL_Init(SDL_INIT_VIDEO);
 		start_polling();
 	};
@@ -386,6 +386,7 @@ private:
 	*/
 	void start_polling()
 	{
+		bool quit = false;
 		const unsigned int LINE_MAX_SIZE = 256;
 		// Start polling for commands
 		char line[LINE_MAX_SIZE];
@@ -536,6 +537,7 @@ private:
 								std::getline(std::cin, annotation);
 								s->do_annotation(ID, annotation);
 								found_ID = true;
+								std::cout << "Annotation entered" << std::endl;
 								break;
 							}
 						}
@@ -610,15 +612,27 @@ private:
 					std::cout << std::endl;
 				}break;
 
+				case Commands::QUIT:
+				{
+					quit = true;
+				}break;
+
 				default:
 				{
 					std::cout << "Unknow command" << std::endl;
 				}
 			}
+
+
+			if (quit)
+				break;
+
 			std::cin.clear();
 			std::cin.ignore(100000, '\n');
 			std::cout << std::endl << "Command : ";
+
 		}
+		io_service.stop();
 		t->join();
 	}
 
@@ -630,7 +644,7 @@ private:
 	tcp::resolver* resolver; /*!< boost::asio TCP resolver */
 	std::thread* t;  /*!< Thread polling Input/Output event from io_service */
 };
-const std::vector<std::string> Server::cmds = { "display", "send", "get", "print", "annotate", "stats", "patchwork", "help" };
+const std::vector<std::string> Server::cmds = { "display", "send", "get", "print", "annotate", "stats", "patchwork", "help" , "quit"};
 
 
 #if _WIN32
