@@ -655,14 +655,6 @@ int main()
 {
   try
   {
-
-#if 0
-    if (argc < 2)
-    {
-      std::cerr << "Usage: chat_server <port> [<port> ...]\n";
-      //return 1;
-    }
-#endif
 	boost::asio::io_service io_service;
 	Server s(io_service);
   }

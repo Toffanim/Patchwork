@@ -694,7 +694,7 @@ int _tmain(int argc, _TCHAR* argv[])
 int main()
 #endif
 {
-	//Create io_service and start Client
+  //Create io_service and start Client
   boost::asio::io_service io_service;
   //Client will be cleaned by app
   Client c("127.0.0.1", "8080", io_service);

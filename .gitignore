@@ -27,7 +27,6 @@ $RECYCLE.BIN/
 *.ilk
 *.pdb
 *.idb
-Documentation/*
 ipch/*
 *.sdf
 

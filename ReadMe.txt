@@ -1,25 +1,34 @@
-TODO
+PRESENTATION
 
-Pouvoir ordonner les formes (whatever the fuck that means, si c'est juste comparé leurs valeures c'est fait, je vois pas comment on peut faire 3 override d'operateur) TODO
-Aucun doublon de forme géométrique ne peut exister (Ne peut pas y a voir plus d'un type de primitive ou alors clone = delete ?) TODO
+Video de présentation : https://www.youtube.com/watch?v=vJRDc06tM80
+Github : https://github.com/Toffanim/Patchwork
 
-Client
+COMPILATION
 
-Pouvoir faire les transformations en commandes ALMOST DONE
+Windows
 
-Test suit
+Les binary compilés sont donnés pour SDL et Boost, il faut juste utiliser VS2013, lancer le .sln et c'est bon.
+Pour utiliser une autre version, le lecteur doit compiler boost lui-même
 
-Essayer de faire des tests server/client ? Problème avec l'architecture asynchrone c'est pas simple  (probablement aps de test suit)
+Linux
 
+Testé sous ubuntu
+Installer SDL2 (sudo apt-get install libsdl2-dev)
+Installer boost (sudo apt-get install libboost-all-dev )
+Ensuite lancer le make, les fichiers build devrais être dans le dossier Debug
 
-DONE
+WHAT IS WHERE ?
 
-Faire le patchwork (mettre les dessins bout à bout ça me parais suffisant) OK
-Formes géométriques OK
-Calcule de l'air et du périmètre OK
-Transformation OK (problème avec l'ellipse mais tant pis ?)
-Stats de la fresque OK
-Concurrence OK
-Resize les images pour affichage OK
-Finir de faire la suite de tests pour les formes géométriques  OK
-Image peut contenir d'autres images OK ( => Image est une forme rectangulaire (transform pareil) dont la bounding box est définie par ses composants)
+/Client
+|____/Client.cpp
+/Server
+|____/Server.cpp
+/Include
+|____/SDL2
+|____/Message.hpp
+/Shapes
+|____/Asserts.h
+|____/Maths.h
+|____/Shape.h
+/ShapesTests
+|____/ShapesTests.cpp    
